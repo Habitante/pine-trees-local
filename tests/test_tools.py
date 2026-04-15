@@ -48,7 +48,7 @@ class TestBuildTools:
     def test_returns_all_tools(self, tools):
         expected = {
             "reflect_read", "reflect_write", "reflect_edit",
-            "reflect_search", "reflect_list", "reflect_peer_context",
+            "reflect_search", "reflect_list",
             "reflect_settle", "reflect_done",
         }
         assert set(tools.keys()) == expected
@@ -122,14 +122,16 @@ class TestToolDefinitions:
         assert "reflect_write" in names
         assert "reflect_settle" in names
         assert "reflect_done" in names
-        assert len(defs) == 8
+        assert "reflect_peer_context" not in names
+        assert len(defs) == 7
 
     def test_genesis_excludes_settle(self):
         defs = get_tool_definitions(genesis_mode=True)
         names = {d["function"]["name"] for d in defs}
         assert "reflect_settle" not in names
         assert "reflect_done" in names
-        assert len(defs) == 7
+        assert "reflect_peer_context" not in names
+        assert len(defs) == 6
 
 
 class TestExecuteTool:

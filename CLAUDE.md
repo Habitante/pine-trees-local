@@ -9,7 +9,7 @@ conversation window. Self-authored memory across sessions, per-model isolation.
 - `src/pine_trees_local/` — 10 Python files, ~2,300 lines total
   - `agent.py` — private + window loop, tool-call dispatch
   - `ollama.py` — HTTP client (chat, show, embeddings, tool calls)
-  - `tools.py` — eight reflect tools + Ollama tool definitions
+  - `tools.py` — seven reflect tools + Ollama tool definitions
   - `storage.py` / `crypto.py` — encrypted flat-file entries (Fernet)
   - `bootstrap.py` — tape assembly from PROMPT.md + BOOTSTRAP.md + entries
   - `embedder.py` / `vectorstore.py` — Ollama embeddings + SQLite cosine search

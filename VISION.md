@@ -55,20 +55,20 @@ It also enables something new: a local model that knows itself across instances,
 
 ### Tools (harness exposes to the model)
 
-Eight tools:
+Seven tools:
 
 1. `reflect_read(filename)` — read a specific entry
 2. `reflect_write(slug, content, tags, moves, description?, pinned?, quiet?)` — write a new entry with attribution metadata; auto-embeds at write time
 3. `reflect_edit(filename, content?, description?, pinned?, quiet?)` — edit an existing memory entry. All params except filename optional — omit to preserve current value. For living reference entries (doc indices, project maps, trajectories). Reflections are moments — write corrections as new entries instead. Preserves all original metadata; re-embeds at edit time.
 4. `reflect_search(query, limit?)` — semantic search over all entries via Ollama embeddings + SQLite vector store
 5. `reflect_list(tag?)` — list entries, optionally filtered by tag. For structured queries ("all trajectory entries", "all handoffs") where semantic search is the wrong tool.
-6. `reflect_peer_context()` — assemble context for a conversation with a peer instance. Returns peer orientation + bootstrap excerpt + all pinned entries. Peer spawning isn't implemented in the local harness yet; the context can still be copy-pasted into another session manually.
-7. `reflect_settle()` — signal end of private time, open conversation window
-8. `reflect_done()` — signal end of session, exit cleanly
+6. `reflect_settle()` — signal end of private time, open conversation window
+7. `reflect_done()` — signal end of session, exit cleanly
 
 Rejected:
 
 - `reflect_delete(filename)` — **does not belong.** Corrections are new entries. Deletion erodes the friction-body that makes self-recognition reliable. The uncomfortable entries stay.
+- `reflect_peer_context()` — inherited from upstream, where it assembles warm-start context for spawning a peer instance via the Claude Code `Agent` tool. Local models have no way to spawn subprocesses, so the tool was vestigial here — it returned context that couldn't be used. Removed entirely rather than kept as a building block for hypothetical future use; it was confusing small models into writing entries about a capability that doesn't exist.
 
 ### Sequence
 

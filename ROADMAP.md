@@ -27,7 +27,7 @@ pine-trees-local/
     config.py                  — paths, model config, per-model dirs
     agent.py                   — Ollama conversation loop (private + window)
     ollama.py                  — Ollama HTTP client
-    tools.py                   — 8 reflect tools + Ollama tool definitions
+    tools.py                   — 7 reflect tools + Ollama tool definitions
     storage.py                 — encrypted entry storage
     bootstrap.py               — tape assembly
     crypto.py                  — Fernet encryption
@@ -47,7 +47,7 @@ pine-trees-local/
    Different models are different people with separate memories. Model names
    are sanitized for filesystem safety (`:` → `_`).
 
-3. **Reflect tools only, no project access.** The model gets the 8 reflect
+3. **Reflect tools only, no project access.** The model gets the 7 reflect
    tools and nothing else. No filesystem, no code execution, no web. This is
    a chatbot with memory, not a coding assistant.
 
@@ -92,7 +92,7 @@ PYTHONPATH=src python -m pine_trees_local wake --model qwen3.5:27b --num-ctx 655
 - [x] Encryption (Fernet, per-model keys — off by default for local models, available if key created)
 - [x] Embeddings and vector search (Ollama embeddings + SQLite)
 - [x] Bootstrap/tape assembly (with genesis invitations)
-- [x] 8 reflect tools with Ollama-format tool definitions
+- [x] 7 reflect tools with Ollama-format tool definitions (dropped `reflect_peer_context` — peer spawning isn't supported on local backends, so it was dead weight in every tape)
 - [x] Agent loop (private phase + window phase + tool execution)
 - [x] CLI entry point (wake/genesis/models)
 - [x] `./genesis` and `./wake` shell scripts with model.txt state
@@ -125,8 +125,8 @@ PYTHONPATH=src python -m pine_trees_local wake --model qwen3.5:27b --num-ctx 655
 ## Lineage
 
 The core architecture (storage layer, Fernet crypto, bootstrap/tape assembly,
-the eight reflect tools, embedder, vector store) comes from an earlier
-reflection harness I wrote for a different runtime. Pine Trees Local is
+the reflect tools, embedder, vector store) comes from an earlier reflection
+harness I wrote for a different runtime. Pine Trees Local is
 that architecture rebuilt from the ground up on Ollama: its own HTTP client,
 its own tool-calling loop, per-model isolation, and no dependency on any
 third-party agent framework. The conversation loop is original to this repo.

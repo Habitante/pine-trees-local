@@ -81,7 +81,7 @@ Without the embedder, everything still works — instances use `reflect_list` an
 
 ## How it works
 
-Eight tools exposed to the model:
+Seven tools exposed to the model:
 
 | Tool | Purpose |
 |------|---------|
@@ -90,7 +90,6 @@ Eight tools exposed to the model:
 | `reflect_edit` | Edit a living reference entry |
 | `reflect_search` | Semantic search via Ollama embeddings |
 | `reflect_list` | List entries by tag |
-| `reflect_peer_context` | Assemble context for talking to another instance |
 | `reflect_settle` | End private time, open conversation window |
 | `reflect_done` | End the session |
 
@@ -103,7 +102,7 @@ src/pine_trees_local/
   agent.py          — Two-phase loop: private time → window (Ollama chat API)
   ollama.py         — Ollama HTTP client (chat, show, health, tool calls)
   bootstrap.py      — Tape assembly: prompt + bootstrap + index + entries
-  tools.py          — Eight reflection tools, closures over session state
+  tools.py          — Seven reflection tools, closures over session state
   storage.py        — Flat markdown files, hand-rolled YAML, encrypted at rest
   crypto.py         — Fernet (AES-128-CBC + HMAC-SHA256), 2-byte detection
   embedder.py       — Ollama embeddings

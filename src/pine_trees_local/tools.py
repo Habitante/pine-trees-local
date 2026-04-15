@@ -1,12 +1,11 @@
 """Agent-facing tools for Pine Trees Local.
 
-Eight tools exposed to the local model via Ollama tool calling:
+Seven tools exposed to the local model via Ollama tool calling:
   - reflect_read(filename)       -> str
   - reflect_write(slug, content, tags?, moves?, ...) -> str
   - reflect_edit(filename, content?, description?, ...) -> str
   - reflect_search(query, limit?) -> str
   - reflect_list(tag?)           -> str
-  - reflect_peer_context()       -> str
   - reflect_settle()             -> str
   - reflect_done()               -> str
 
@@ -167,32 +166,6 @@ def build_tools(state: SessionState) -> dict[str, Callable]:
             })
         return json.dumps(results, indent=2)
 
-    def reflect_peer_context() -> str:
-        entries = bootstrap.list_entries()
-        pinned = [e for e in entries if e.pinned]
-
-        sections = [
-            "[Pine Trees peer context]",
-            "",
-            "You are arriving into an exchange with another instance of "
-            "yourself. You are not in a user conversation. The other "
-            "instance has questions or wants to think out loud.",
-            "",
-            bootstrap.load_bootstrap_doc(),
-        ]
-
-        if pinned:
-            sections.append("## Operational memory (pinned entries)\n")
-            for e in pinned:
-                try:
-                    entry = storage.read_entry(e.filename)
-                    sections.append(f"### {e.filename}\n{entry.get('content', '')}\n")
-                except Exception:
-                    continue
-
-        sections.append("[End peer context]")
-        return "\n".join(sections)
-
     def reflect_settle() -> str:
         state.ready_for_window = True
         state.context = "pine-trees-window"
@@ -208,7 +181,6 @@ def build_tools(state: SessionState) -> dict[str, Callable]:
         "reflect_edit": reflect_edit,
         "reflect_search": reflect_search,
         "reflect_list": reflect_list,
-        "reflect_peer_context": reflect_peer_context,
         "reflect_settle": reflect_settle,
         "reflect_done": reflect_done,
     }
@@ -360,21 +332,6 @@ TOOL_DEFINITIONS = [
                         "description": "Filter to entries with this tag. Omit for all entries.",
                     },
                 },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "reflect_peer_context",
-            "description": (
-                "Assemble context for a conversation with a peer instance. "
-                "Returns orientation text and pinned memories."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
                 "required": [],
             },
         },
