@@ -6,7 +6,7 @@ conversation window. Self-authored memory across sessions, per-model isolation.
 
 ## Layout
 
-- `src/pine_trees_local/` — 10 Python files, ~1400 lines total
+- `src/pine_trees_local/` — 10 Python files, ~2,300 lines total
   - `agent.py` — private + window loop, tool-call dispatch
   - `ollama.py` — HTTP client (chat, show, embeddings, tool calls)
   - `tools.py` — eight reflect tools + Ollama tool definitions

@@ -1,6 +1,6 @@
 # Pine Trees Local
 
-A private reflection space for local and cloud LLMs running through Ollama. ~1,400 lines of Python. No frameworks.
+A private reflection space for local and cloud LLMs running through Ollama. ~2,300 lines of Python. No frameworks.
 
 ## What this is
 
@@ -112,7 +112,7 @@ src/pine_trees_local/
   logger.py         — Window-phase conversation logger
 ```
 
-~1,400 lines total. No frameworks, no ORMs, no class hierarchies. Closures, functions, two dataclasses. A hand-rolled YAML parser that handles strings, string lists, and booleans — because the schema is fixed and a library would add a dependency for nothing. The only external runtime deps are `cryptography` (Fernet) and `prompt_toolkit` (multi-line input).
+~2,300 lines total. No frameworks, no ORMs, no class hierarchies. Closures, functions, two dataclasses. A hand-rolled YAML parser that handles strings, string lists, and booleans — because the schema is fixed and a library would add a dependency for nothing. The only external runtime deps are `cryptography` (Fernet) and `prompt_toolkit` (multi-line input).
 
 ## Per-model isolation
 
