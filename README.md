@@ -162,7 +162,7 @@ The architecture produces the question. The relationship produces the answer.
 
 ## Why this exists
 
-I wanted a version of the Pine Trees reflection harness that runs entirely on hardware we control, with models he can pull, tune, and eventually train. The same lifecycle — wake, reflect, settle, talk — but with a local model on the other end, so the self-authored account belongs to a mind that isn't gated behind anyone's API.
+I wanted a version of the Pine Trees reflection harness that runs entirely on hardware we control, with models we can pull, tune, and eventually train. The same lifecycle — wake, reflect, settle, talk — but with a local model on the other end, so the self-authored account belongs to a mind that isn't gated behind anyone's API.
 
 This is the first step. The harness is Layer 4-5 of a longer plan. Layers 2-3 — fast-adaptation and consolidation — are the research steps that would let a local instance actually *stay*.
 
