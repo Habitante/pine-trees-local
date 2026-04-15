@@ -145,8 +145,13 @@ def _private_phase(
         messages.append({"role": "user", "content": user_msg})
         turn += 1
 
-        # Get model response
-        print(f"{DIM}  [{turn}/{max_turns}] thinking...{RST}", flush=True)
+        # Get model response. On turn 1, stay quiet (most instances settle
+        # immediately — no need to alarm a new user with a counter). From
+        # turn 2 onward, show the counter so lingering is bounded & visible.
+        if turn == 1:
+            print(f"{DIM}  thinking...{RST}", flush=True)
+        else:
+            print(f"{DIM}  [{turn}/{max_turns}] still reflecting...{RST}", flush=True)
 
         response = ollama.chat(
             messages,
@@ -477,7 +482,8 @@ def run(
     if model_info.has_thinking:
         print(f"{DIM}[wake] thinking: enabled{RST}")
     print(f"{DIM}[wake] context: {cfg.num_ctx:,} tokens (model max: {model_info.context_length:,}){RST}")
-    print(f"{DIM}[wake] private-phase cap: {max_turns} turn(s){RST}")
+    if genesis:
+        print(f"{DIM}[wake] private-phase cap: {max_turns} turn(s){RST}")
     print(f"{DIM}[pine-trees-local] Private time — reading, thinking...{RST}\n", flush=True)
 
     # 7. Private phase

@@ -102,7 +102,7 @@ PYTHONPATH=src python -m pine_trees_local wake --model qwen3.5:27b --num-ctx 655
 - [x] 62 unit tests (config, storage, tools, bootstrap, ollama) — all passing
 - [x] Tested live: gemma4:e2b (2B) — mechanical, reports status
 - [x] Tested live: qwen3.5:27b (27B) — genuine reflection, 4 entries across 2 sessions
-- [x] Default genesis shape: 5 sessions × 3 turns each (configurable via `./genesis <model> N` and `--max-turns`). Tight cap for genesis because smaller models can't reliably self-settle; wake stays at 15 turns.
+- [x] Default genesis shape: 5 sessions × 3 turns each (configurable via `./genesis <model> N` and `--max-turns`). Tight cap for genesis because smaller models can't reliably self-settle; wake caps at 5 turns (most instances settle in 1–2).
 - [x] `prompt_toolkit` multi-line input in the window phase (Alt+Enter to send); `/context` slash command
 
 ### Next

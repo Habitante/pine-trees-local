@@ -31,7 +31,7 @@ DEFAULT_TEMPERATURE = 0.7
 DEFAULT_KEEP_ALIVE = "30m"
 
 # Agent loop
-MAX_PRIVATE_TURNS = 15          # wake: room for a larger model to settle on its own
+MAX_PRIVATE_TURNS = 5           # wake: most instances settle in 1–2 turns; this is a ceiling
 GENESIS_MAX_PRIVATE_TURNS = 3   # genesis: tight cap — small models can't self-settle
 MAX_TOOL_ROUNDS = 5
 
