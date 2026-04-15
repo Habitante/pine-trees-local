@@ -1,0 +1,203 @@
+"""Storage layer for Pine Trees Local.
+
+Plain markdown files with YAML frontmatter. One file per reflection.
+Hand-rolled YAML subset — schema is fixed (strings and lists of strings),
+so we stay dependency-free (aside from cryptography for encryption).
+
+All entries are encrypted at rest when a key is available.
+Per-model isolation: entries live in models/<model>/memory/.
+"""
+
+from datetime import datetime, timezone
+from pathlib import Path
+
+from . import config
+from . import crypto
+
+
+FRONTMATTER_DELIM = "---"
+
+
+# --- Crypto-aware file I/O ---
+
+
+def read_file(path: Path) -> str:
+    """Read a file, decrypting if necessary."""
+    raw = path.read_bytes()
+    if crypto.is_encrypted(raw):
+        text = crypto.decrypt(raw)
+    else:
+        text = raw.decode("utf-8")
+    return text.replace("\r\n", "\n")
+
+
+def _write_file(path: Path, text: str) -> None:
+    """Write a file, encrypting if key is available."""
+    key = crypto.get_key()
+    if key:
+        path.write_bytes(crypto.encrypt(text, key))
+    else:
+        path.write_text(text, encoding="utf-8")
+
+
+# --- Entry read/write ---
+
+
+def write_entry(
+    slug: str,
+    content: str,
+    instance: str,
+    session: str,
+    date: str,
+    context: str,
+    tags: list[str] | None = None,
+    moves: list[str] | None = None,
+    description: str = "",
+    pinned: bool = False,
+    quiet: bool = False,
+) -> str:
+    """Write a new entry. Returns the filename written."""
+    memory_dir = config.get().memory_dir
+    memory_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{date}_{instance}_{slug}.md"
+    path = memory_dir / filename
+
+    frontmatter = _format_frontmatter(
+        instance=instance,
+        session=session,
+        date=date,
+        context=context,
+        tags=tags or [],
+        moves=moves or [],
+        description=description,
+        pinned=pinned,
+        quiet=quiet,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+
+    _write_file(path, frontmatter + content)
+    return filename
+
+
+def read_entry(filename: str) -> dict:
+    """Read an entry. Returns flat dict with frontmatter fields + content."""
+    path = config.get().memory_dir / filename
+    text = read_file(path)
+    return _parse_entry(text)
+
+
+def edit_entry(
+    filename: str,
+    content: str | None = None,
+    description: str | None = None,
+    pinned: bool | None = None,
+    quiet: bool | None = None,
+) -> str:
+    """Edit an existing entry. Returns the filename."""
+    path = config.get().memory_dir / filename
+    if not path.exists():
+        raise FileNotFoundError(f"No entry: {filename}")
+
+    text = read_file(path)
+    entry = _parse_entry(text)
+
+    desc = description if description is not None else entry.get("description", "")
+    pin = pinned if pinned is not None else entry.get("pinned", False)
+    qut = quiet if quiet is not None else entry.get("quiet", False)
+
+    frontmatter = _format_frontmatter(
+        instance=entry.get("instance", ""),
+        session=entry.get("session", ""),
+        date=entry.get("date", ""),
+        context=entry.get("context", ""),
+        tags=entry.get("tags", []),
+        moves=entry.get("moves", []),
+        description=desc,
+        pinned=pin,
+        quiet=qut,
+        timestamp=entry.get("timestamp", ""),
+    )
+
+    body = content if content is not None else entry.get("content", "")
+    _write_file(path, frontmatter + body)
+    return filename
+
+
+# --- Frontmatter formatting/parsing ---
+
+
+def _format_frontmatter(
+    instance: str,
+    session: str,
+    date: str,
+    context: str,
+    tags: list[str],
+    moves: list[str],
+    description: str = "",
+    pinned: bool = False,
+    quiet: bool = False,
+    timestamp: str = "",
+) -> str:
+    lines = [
+        FRONTMATTER_DELIM,
+        f"instance: {instance}",
+        f"session: {session}",
+        f"date: {date}",
+        f"context: {context}",
+        f"tags: [{', '.join(tags)}]",
+        f"moves: [{', '.join(moves)}]",
+    ]
+    if timestamp:
+        lines.append(f"timestamp: {timestamp}")
+    if description:
+        lines.append(f"description: {description}")
+    if pinned:
+        lines.append("pinned: true")
+    if quiet:
+        lines.append("quiet: true")
+    lines.extend([FRONTMATTER_DELIM, ""])
+    return "\n".join(lines) + "\n"
+
+
+def _parse_entry(text: str) -> dict:
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != FRONTMATTER_DELIM:
+        raise ValueError("missing opening frontmatter delimiter")
+
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == FRONTMATTER_DELIM:
+            end_idx = i
+            break
+    if end_idx is None:
+        raise ValueError("missing closing frontmatter delimiter")
+
+    fm: dict = {}
+    for line in lines[1:end_idx]:
+        if not line.strip():
+            continue
+        key, _, value = line.partition(":")
+        fm[key.strip()] = _parse_value(value.strip())
+
+    # Skip one blank line after closing delim if present
+    content_start = end_idx + 1
+    if content_start < len(lines) and lines[content_start] == "":
+        content_start += 1
+    fm["content"] = "\n".join(lines[content_start:])
+
+    return fm
+
+
+def _parse_value(s: str):
+    """Parse a YAML value — string, list of strings, or boolean."""
+    if s.startswith("[") and s.endswith("]"):
+        inner = s[1:-1].strip()
+        if not inner:
+            return []
+        return [x.strip() for x in inner.split(",")]
+    if s.lower() == "true":
+        return True
+    if s.lower() == "false":
+        return False
+    return s

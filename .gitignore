@@ -1,0 +1,27 @@
+# Per-model data (private, not committed)
+models/
+model.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code — personal per-project settings (permissions, allow-lists).
+# .claude/settings.json is shareable project config and may be committed;
+# settings.local.json is personal and should not be.
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db

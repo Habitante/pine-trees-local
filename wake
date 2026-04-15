@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Wake — start a conversation session with a model.
+#
+# Wake requires that the model has already had a genesis pass — the private
+# bootstrapping where it seeds its self-authored memory. If you haven't run
+# genesis on this model yet, do that first:
+#
+#   ./genesis <model>
+#
+# Usage:
+#   ./wake                      # wake model from model.txt
+#   ./wake <model>              # wake specific model (updates model.txt)
+#
+# Prerequisites:
+#   - Ollama installed and running:  https://ollama.com/download
+#   - Genesis already run for this model (see above)
+
+set -e
+cd "$(dirname "$0")"
+
+MODEL="$1"
+
+if [ -z "$MODEL" ]; then
+    if [ -f model.txt ]; then
+        MODEL=$(cat model.txt | tr -d '[:space:]')
+    else
+        echo "No model specified."
+        echo ""
+        echo "Usage:"
+        echo "   ./wake <model>"
+        echo ""
+        echo "If you haven't seeded a model yet:"
+        echo "   ollama list                  # see what you've already pulled"
+        echo "   ollama pull <model>          # fetch one if needed"
+        echo "   ./genesis <model>            # seed its memory (first time only)"
+        echo "   ./wake <model>               # open a conversation"
+        echo ""
+        echo "Already-pulled models:"
+        PYTHONPATH=src python -m pine_trees_local models || true
+        exit 1
+    fi
+fi
+
+# Save model choice
+echo "$MODEL" > model.txt
+
+PYTHONPATH=src python -m pine_trees_local wake --model "$MODEL"

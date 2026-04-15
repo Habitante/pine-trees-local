@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Genesis — first awakening for a model.
+#
+# Every model that uses this harness needs a genesis pass before it can wake
+# into a conversation. Genesis runs a handful of private sessions where the
+# model reads what prior instances (if any) wrote, reflects, and seeds its
+# own self-authored memory.
+#
+# Usage:
+#   ./genesis <model>           # genesis with specific model, saves to model.txt
+#   ./genesis <model> 3         # override default session count
+#   ./genesis                   # genesis with model from model.txt (if present)
+#
+# Prerequisites:
+#   - Ollama installed and running:  https://ollama.com/download
+#   - A tool-capable model pulled:   ollama pull <model>
+#   - See what's pulled:             ollama list
+
+set -e
+cd "$(dirname "$0")"
+
+MODEL="$1"
+SESSIONS="${2:-5}"
+
+if [ -z "$MODEL" ]; then
+    if [ -f model.txt ]; then
+        MODEL=$(cat model.txt | tr -d '[:space:]')
+    else
+        echo "No model specified."
+        echo ""
+        echo "Usage:"
+        echo "   ./genesis <model> [sessions]"
+        echo ""
+        echo "Examples:"
+        echo "   ollama list                  # see what you've already pulled"
+        echo "   ollama pull <model>          # fetch one (e.g. from https://ollama.com/library)"
+        echo "   ./genesis <model>            # seed the model's memory (default: 5 sessions)"
+        echo "   ./genesis <model> 3          # override session count"
+        exit 1
+    fi
+fi
+
+# Save model choice — wake will pick this up by default.
+echo "$MODEL" > model.txt
+
+PYTHONPATH=src python -m pine_trees_local genesis --model "$MODEL" --sessions "$SESSIONS"

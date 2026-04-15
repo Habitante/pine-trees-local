@@ -1,0 +1,8 @@
+# Pine Trees Local dependencies
+#
+# Core (required):
+cryptography>=41.0
+prompt_toolkit>=3.0
+
+# Testing:
+# pytest>=7.0
