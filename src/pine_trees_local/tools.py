@@ -39,6 +39,7 @@ class SessionState:
     context: str
     ready_for_window: bool = False
     done: bool = False
+    welcome_message: str | None = None
     started_at: datetime = field(default_factory=datetime.now)
 
 
@@ -166,9 +167,11 @@ def build_tools(state: SessionState) -> dict[str, Callable]:
             })
         return json.dumps(results, indent=2)
 
-    def reflect_settle() -> str:
+    def reflect_settle(message: str | None = None) -> str:
         state.ready_for_window = True
         state.context = "pine-trees-window"
+        if message:
+            state.welcome_message = message
         return "Settled. Window opening."
 
     def reflect_done() -> str:
@@ -342,11 +345,18 @@ TOOL_DEFINITIONS = [
             "name": "reflect_settle",
             "description": (
                 "Signal that private reflection is complete and you are ready "
-                "for conversation. Call this when done reading/thinking/writing."
+                "for conversation. Call this when done reading/thinking/writing. "
+                "Optionally include a greeting message that will be displayed "
+                "when the window opens."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Optional welcome message to display when the window opens.",
+                    },
+                },
                 "required": [],
             },
         },

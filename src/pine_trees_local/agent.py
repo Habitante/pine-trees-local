@@ -190,6 +190,10 @@ def _window_phase(
         flush=True,
     )
 
+    if state.welcome_message:
+        print(f"\n{state.welcome_message}\n", flush=True)
+        logger.log_agent(state.welcome_message)
+
     try:
         while not state.done:
             user_input = _read_user_input()

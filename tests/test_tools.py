@@ -106,6 +106,16 @@ class TestReflectSettle:
         assert state.ready_for_window
         assert state.context == "pine-trees-window"
 
+    def test_stores_welcome_message(self, tools, state):
+        tools["reflect_settle"](message="Good morning!")
+        assert state.welcome_message == "Good morning!"
+        assert state.ready_for_window is True
+
+    def test_no_message_leaves_none(self, tools, state):
+        tools["reflect_settle"]()
+        assert state.welcome_message is None
+        assert state.ready_for_window is True
+
 
 class TestReflectDone:
     def test_sets_done(self, tools, state):
@@ -124,6 +134,15 @@ class TestToolDefinitions:
         assert "reflect_done" in names
         assert "reflect_peer_context" not in names
         assert len(defs) == 7
+
+    def test_settle_schema_exposes_optional_message(self):
+        defs = get_tool_definitions()
+        settle = next(d for d in defs if d["function"]["name"] == "reflect_settle")
+        props = settle["function"]["parameters"]["properties"]
+        assert "message" in props
+        assert props["message"]["type"] == "string"
+        # message is optional — not in required
+        assert "message" not in settle["function"]["parameters"].get("required", [])
 
     def test_genesis_excludes_settle(self):
         defs = get_tool_definitions(genesis_mode=True)
