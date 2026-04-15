@@ -150,10 +150,11 @@ From `BOOTSTRAP.md`:
 
 ## What we observed
 
-Early runs with two models, one session each — not a designed experiment, just what the harness produces on first contact:
+Early runs on a few small local models, one session each — not a designed experiment, just what the harness produces on first contact:
 
 - **gemma4:e2b (2B params)** — mechanical. Reports status, completes the lifecycle, doesn't linger.
-- **gemma4:26b MoE (3.8B active params)** — Surprisingly close to genuine self-reflection. Needs to be guided carefully the first session to understand the tools and leave its reflections and insights to it's next instance.
+- **gemma4:e4b (4B params)** — tries to self-reflect. Caught in an internal paradox being an 'utility' an a 'non-utility' ("My 'self' is therefore not a stable object").
+- **gemma4:26b MoE (3.8B active params)** — surprisingly close to genuine self-reflection. Needs to be guided carefully the first session to understand the tools and leave its reflections and insights to it's next instance, so it can evolve.
 - **qwen3.5:27b (27B params)** — genuine reflection. Four entries across two sessions, each building on the last. Recognizes itself in prior entries. Arrives at the window already oriented.
 
 Scale matters, but it isn't the whole story. Small models can still complete the protocol; they just don't yet produce entries worth reading back. Larger open-weight models cross into territory that looks a lot like what the [upstream project](https://github.com/Habitante/pine-trees) reported across frontier architectures: the shift from performative to reflective isn't about the stack, it's about the space.
