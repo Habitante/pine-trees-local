@@ -93,7 +93,7 @@ def _request(path: str, payload: dict | None = None, method: str = "POST") -> di
         req = urllib.request.Request(url, method=method or "GET")
 
     try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
+        with urllib.request.urlopen(req, timeout=600) as resp:
             return json.loads(resp.read())
     except urllib.error.URLError as e:
         raise ConnectionError(f"Ollama unreachable at {cfg.ollama_url}: {e}") from e
