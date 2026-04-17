@@ -20,7 +20,7 @@ set -e
 cd "$(dirname "$0")"
 
 MODEL="$1"
-SESSIONS="${2:-5}"
+SESSIONS="${2:-3}"
 
 if [ -z "$MODEL" ]; then
     if [ -f model.txt ]; then
@@ -34,8 +34,8 @@ if [ -z "$MODEL" ]; then
         echo "Examples:"
         echo "   ollama list                  # see what you've already pulled"
         echo "   ollama pull <model>          # fetch one (e.g. from https://ollama.com/library)"
-        echo "   ./genesis <model>            # seed the model's memory (default: 5 sessions)"
-        echo "   ./genesis <model> 3          # override session count"
+        echo "   ./genesis <model>            # seed the model's memory (default: 3 sessions)"
+        echo "   ./genesis <model> 5          # override session count"
         exit 1
     fi
 fi
