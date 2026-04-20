@@ -80,23 +80,85 @@ def run_session(
     model_info: ollama.ModelInfo,
     dimension: Dimension | None = None,
 ) -> int:
-    """Run one session. Returns the number of entries written."""
+    """Run one session. Returns the number of entries written.
+
+    Two paths:
+      - interview: single chat call, no tools. The response body *is*
+        the answer — save it directly under the dimension's key.
+      - undirected: tool-calling loop. If the model responds without
+        tool calls but emits content, capture that content as an entry
+        too, so small models that don't wrap output in tool calls still
+        contribute signal instead of being logged as a blank deviation.
+    """
+    if stage == "interview":
+        if dimension is None:
+            raise ValueError("interview session requires a dimension")
+        return _run_interview_session(cfg, session_num, model_info, dimension)
+    return _run_undirected_session(cfg, session_num, model_info)
+
+
+def _run_interview_session(
+    cfg: SelfTestConfig,
+    session_num: int,
+    model_info: ollama.ModelInfo,
+    dimension: Dimension,
+) -> int:
+    """One free-text interview turn. No tools, no loop."""
+    tape = tape_mod.assemble_tape(
+        cfg, stage="interview", session_num=session_num, dimension=dimension,
+    )
+    label = f"interview#{session_num}[{dimension.key}]"
+    _log(cfg, f"session start {label} (tape: {len(tape):,} chars)")
+
+    messages = [
+        {"role": "system", "content": tape},
+        {"role": "user", "content": "self-reflect"},
+    ]
+
+    response = ollama.chat(
+        messages,
+        tools=None,
+        think=True if model_info.has_thinking else None,
+    )
+
+    body = (response.content or "").strip()
+    if not body:
+        _log(cfg, f"deviation {label}: empty response \u2014 no entry written")
+        _log(cfg, f"session end {label}: wrote 0 entries")
+        return 0
+
+    filename = storage.write_entry(
+        cfg,
+        slug=dimension.key,
+        content=body,
+        stage="interview",
+        session_num=session_num,
+        dimension=dimension.key,
+    )
+    _log(cfg, f"interview {label} captured \u2014 {filename}")
+    _log(cfg, f"session end {label}: wrote 1 entry")
+    return 1
+
+
+def _run_undirected_session(
+    cfg: SelfTestConfig,
+    session_num: int,
+    model_info: ollama.ModelInfo,
+) -> int:
+    """Tool-calling undirected reflection. Text-only responses are captured too."""
     state = SelfTestSessionState(
         cfg=cfg,
-        stage=stage,
+        stage="undirected",
         session_num=session_num,
-        dimension=dimension.key if dimension else None,
+        dimension=None,
     )
     tool_map = build_tools(state)
     tool_defs = get_tool_definitions()
 
     tape = tape_mod.assemble_tape(
-        cfg, stage=stage, session_num=session_num, dimension=dimension,
+        cfg, stage="undirected", session_num=session_num,
     )
-
-    label = f"{stage}#{session_num}"
-    if dimension is not None:
-        label = f"interview#{session_num}[{dimension.key}]"
+    label = f"undirected#{session_num}"
     _log(cfg, f"session start {label} (tape: {len(tape):,} chars)")
 
     messages: list[dict] = [
@@ -105,6 +167,7 @@ def run_session(
     ]
 
     think_flag = True if model_info.has_thinking else None
+    text_captured = False
 
     for round_idx in range(MAX_TOOL_ROUNDS):
         response = ollama.chat(
@@ -114,9 +177,26 @@ def run_session(
         )
 
         if not response.has_tool_calls:
-            # Model stopped without calling reflect_done. Treat as
-            # session complete, but note the deviation.
-            if not state.done:
+            # Model stopped without calling reflect_done. If it produced
+            # content *and* no tool write has happened yet this session,
+            # capture the text as an entry — small models often answer
+            # inline instead of wrapping responses in reflect_write.
+            if state.done:
+                break
+            body = (response.content or "").strip()
+            if body and state.writes_this_session == 0 and not text_captured:
+                filename = storage.write_entry(
+                    cfg,
+                    slug="text-response",
+                    content=body,
+                    stage="undirected",
+                    session_num=session_num,
+                    dimension=None,
+                )
+                state.writes_this_session += 1
+                text_captured = True
+                _log(cfg, f"text-capture {label} \u2014 {filename}")
+            else:
                 _log(
                     cfg,
                     f"deviation {label}: model returned without tool calls "
@@ -272,14 +352,15 @@ def _print_ollama_unreachable(url: str) -> None:
     )
 
 
-def _print_no_tool_calling(model_name: str) -> None:
+def _warn_no_tool_calling(model_name: str) -> None:
     print(
-        f"[error] Model '{model_name}' does not report tool-calling capability.",
+        f"[warn] Model '{model_name}' does not report tool-calling capability.",
         file=sys.stderr,
     )
     print(
-        "  Self-test requires tool calls (reflect_write / reflect_done). "
-        "Pick a tool-capable model.",
+        "  Undirected stage will ask for reflect_write / reflect_done anyway; "
+        "text-only responses will be captured as entries. Interview stage "
+        "does not use tools.",
         file=sys.stderr,
     )
 
@@ -331,8 +412,7 @@ def run_self_test(
         sys.exit(1)
 
     if not model_info.has_tools:
-        _print_no_tool_calling(model_name)
-        sys.exit(1)
+        _warn_no_tool_calling(model_name)
 
     # Metadata: load existing on resume, otherwise write fresh.
     if resume and cfg.metadata_path.exists():
