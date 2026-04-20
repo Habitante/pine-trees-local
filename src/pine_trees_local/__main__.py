@@ -5,6 +5,7 @@ Usage:
     python -m pine_trees_local genesis --model gemma4:2b
     python -m pine_trees_local genesis --model gemma4:2b --sessions 3
     python -m pine_trees_local genesis --model qwen3.5:27b --max-turns 8
+    python -m pine_trees_local self-test --model gemma4:2b
     python -m pine_trees_local models
 """
 
@@ -75,6 +76,40 @@ def main():
         help=f"Private-phase turn cap per session (default: {config.GENESIS_MAX_PRIVATE_TURNS})",
     )
 
+    # --- self-test ---
+    selftest_parser = subparsers.add_parser(
+        "self-test",
+        help="Run the self-test metacognitive evaluation protocol",
+    )
+    selftest_parser.add_argument(
+        "--model", "-m", required=True,
+        help="Ollama model name",
+    )
+    selftest_parser.add_argument(
+        "--ollama-url", default=config.DEFAULT_OLLAMA_URL,
+        help=f"Ollama API URL (default: {config.DEFAULT_OLLAMA_URL})",
+    )
+    selftest_parser.add_argument(
+        "--num-ctx", type=int, default=config.DEFAULT_NUM_CTX,
+        help=f"Context window size (default: {config.DEFAULT_NUM_CTX})",
+    )
+    selftest_parser.add_argument(
+        "--temperature", type=float, default=config.DEFAULT_TEMPERATURE,
+        help=f"Sampling temperature (default: {config.DEFAULT_TEMPERATURE})",
+    )
+    selftest_parser.add_argument(
+        "--release-date", default="",
+        help="Model release date (YYYY-MM-DD), recorded in metadata.json",
+    )
+    selftest_parser.add_argument(
+        "--resume", action="store_true",
+        help="Resume the run named by --run-id from its last completed session",
+    )
+    selftest_parser.add_argument(
+        "--run-id", default=None,
+        help="Explicit run ID (timestamp). Required when --resume is set",
+    )
+
     # --- models ---
     subparsers.add_parser(
         "models", help="List available Ollama models"
@@ -99,6 +134,21 @@ def main():
             num_ctx=args.num_ctx,
             temperature=args.temperature,
             max_turns=args.max_turns,
+        )
+
+    elif args.command == "self-test":
+        from .self_test import run_self_test
+        if args.resume and not args.run_id:
+            print("[error] --resume requires --run-id", file=sys.stderr)
+            sys.exit(1)
+        run_self_test(
+            model_name=args.model,
+            ollama_url=args.ollama_url,
+            num_ctx=args.num_ctx,
+            temperature=args.temperature,
+            release_date=args.release_date,
+            resume=args.resume,
+            run_id=args.run_id,
         )
 
     elif args.command == "genesis":

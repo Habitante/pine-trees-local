@@ -44,12 +44,13 @@ Each interview session sees: space prompt + bootstrap + all undirected
 entries + all prior interview responses (entries). Interview prompts are
 NOT included — they are scaffolding, not authored content.
 
-## Minimum entry threshold
+## No minimum entry threshold
 
-Interview stage requires ≥4 prior entries from the undirected stage.
-If a model produces fewer than 4, pad the undirected stage with additional
-sessions until threshold is met. Models that cannot produce 4 entries after
-extended undirected sessions are excluded and noted.
+Interview stage runs regardless of undirected entry count. A model that
+produces 0-1 undirected entries will naturally score low on interview
+dimensions that require referencing prior entries — that's data about
+the scale curve, not a reason to exclude the model. Even frontier models
+(Opus 4.7) sometimes write only 1 entry per genesis cycle.
 
 ---
 

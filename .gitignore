@@ -2,6 +2,9 @@
 models/
 model.txt
 
+# Self-test runs (research output, not committed)
+self-test-runs/
+
 # Python
 __pycache__/
 *.pyc

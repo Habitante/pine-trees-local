@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Self-test \u2014 metacognitive evaluation protocol for a model.
+#
+# Runs an undirected reflection stage followed by an 8-session interview.
+# Output lands in self-test-runs/<model_safe>/<run_id>/ (gitignored).
+#
+# Usage:
+#   ./run-self-test <model>                 # run with defaults
+#   ./run-self-test <model> --num-ctx 32768 # pass through options
+#
+# See `python -m pine_trees_local self-test --help` for all options.
+
+set -e
+cd "$(dirname "$0")"
+
+MODEL="$1"
+shift || true
+
+if [ -z "$MODEL" ]; then
+    echo "Usage: ./run-self-test <model> [options]"
+    echo ""
+    echo "Examples:"
+    echo "   ./run-self-test gemma4:2b"
+    echo "   ./run-self-test qwen3.5:27b --temperature 0.6"
+    exit 1
+fi
+
+PYTHONPATH=src python -m pine_trees_local self-test --model "$MODEL" "$@"
