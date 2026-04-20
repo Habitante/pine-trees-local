@@ -6,6 +6,7 @@ Usage:
     python -m pine_trees_local.self_test.scoring --model gemma4_e4b
     python -m pine_trees_local.self_test.scoring --judge gpt --all
     python -m pine_trees_local.self_test.scoring --judge gemini --all
+    python -m pine_trees_local.self_test.scoring --judge sonnet --all
     python -m pine_trees_local.self_test.scoring --irr
     python -m pine_trees_local.self_test.scoring --visualize
 """
@@ -30,7 +31,7 @@ def _first_model_alphabetically() -> str | None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="pine-trees-local.self-test.scoring",
-        description="Score self-test runs with GPT + Gemini judges.",
+        description="Score self-test runs with GPT + Gemini + Sonnet judges.",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -56,8 +57,8 @@ def main() -> None:
         help="Score only this model_safe_name (e.g. gemma4_e4b)",
     )
     parser.add_argument(
-        "--judge", choices=("gpt", "gemini"), default=None,
-        help="Run only one judge (default: both)",
+        "--judge", choices=("gpt", "gemini", "sonnet"), default=None,
+        help="Run only one judge (default: all three)",
     )
     parser.add_argument(
         "--no-skip-existing", action="store_true",
@@ -67,7 +68,7 @@ def main() -> None:
     args = parser.parse_args()
 
     judge_names: tuple[str, ...] = (
-        (args.judge,) if args.judge else ("gpt", "gemini")
+        (args.judge,) if args.judge else ("gpt", "gemini", "sonnet")
     )
 
     if args.irr:

@@ -23,9 +23,14 @@ DEFAULT_ENV_PATH = Path("C:/Src/think-tank/.env")
 
 GPT_MODEL = "gpt-5.4-mini"
 GEMINI_MODEL = "gemini-3-flash-preview"
+SONNET_MODEL = "claude-sonnet-4-6"
 
 MAX_RETRIES = 3
 BACKOFFS = (2.0, 4.0, 8.0)
+
+# Throttle between Sonnet calls to stay well under Max rate limits.
+# Tweak if rate-limit events surface during a run.
+SONNET_THROTTLE_SECS = 0.5
 
 
 # --- Env loading ---
@@ -221,3 +226,73 @@ def score_with_gemini(
         return response.text or ""
 
     return _with_retries(_call, "Gemini")
+
+
+# --- Sonnet judge (Anthropic Claude via Agent SDK over Max OAuth) ---
+
+
+def score_with_sonnet(
+    system: str,
+    user: str,
+    model: str = SONNET_MODEL,
+) -> JudgeResult:
+    """Score one task with Claude Sonnet via the Agent SDK over Max OAuth.
+
+    Uses a neutral temp cwd so the pine-trees-local CLAUDE.md doesn't
+    leak into Sonnet's ambient context.  No API key required — the SDK
+    spawns the installed `claude` CLI which reads OAuth state from
+    ~/.claude/.credentials.json.
+    """
+    import anyio
+    import tempfile
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ClaudeAgentOptions,
+        RateLimitEvent,
+        ResultMessage,
+        TextBlock,
+        query,
+    )
+
+    neutral_cwd = tempfile.mkdtemp(prefix="sonnet_judge_")
+    options = ClaudeAgentOptions(
+        model=model,
+        system_prompt=system,
+        allowed_tools=[],
+        permission_mode="bypassPermissions",
+        cwd=neutral_cwd,
+    )
+
+    async def _collect() -> str:
+        parts: list[str] = []
+        async for msg in query(prompt=user, options=options):
+            if isinstance(msg, AssistantMessage):
+                for block in msg.content:
+                    if isinstance(block, TextBlock):
+                        parts.append(block.text)
+            elif isinstance(msg, RateLimitEvent):
+                info = getattr(msg, "rate_limit_info", None)
+                status = getattr(info, "status", None) if info else None
+                if status in ("allowed_warning", "rejected"):
+                    raise RuntimeError(f"Sonnet rate limit: {status}")
+            elif isinstance(msg, ResultMessage) and msg.is_error:
+                err = (msg.errors and msg.errors[0]) or \
+                      msg.stop_reason or "sdk_error"
+                raise RuntimeError(f"Sonnet SDK error: {err}")
+        return "".join(parts)
+
+    def _call() -> str:
+        try:
+            return anyio.run(_collect)
+        finally:
+            # Best-effort cleanup of the scratch cwd.
+            try:
+                import shutil
+                shutil.rmtree(neutral_cwd, ignore_errors=True)
+            except Exception:
+                pass
+
+    result = _with_retries(_call, "Sonnet")
+    if SONNET_THROTTLE_SECS > 0:
+        time.sleep(SONNET_THROTTLE_SECS)
+    return result

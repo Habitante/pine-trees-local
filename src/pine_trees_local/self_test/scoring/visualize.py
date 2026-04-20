@@ -47,17 +47,17 @@ def _color_of(model_safe: str) -> str:
 
 
 def _mean_score(entry: dict) -> float | None:
-    """Mean of (gpt, gemini) scores, excluding auto-scored & parse failures."""
-    gpt = entry.get("gpt") or {}
-    gem = entry.get("gemini") or {}
-    if (
-        gpt.get("justification") == AUTO_JUSTIFICATION
-        and gem.get("justification") == AUTO_JUSTIFICATION
-    ):
-        # Auto-scored 0 is legitimate signal for the plot — keep it.
+    """Mean of available judge scores, excluding auto-scored & parse failures.
+
+    Includes Sonnet once present. A task where every judge auto-scored 0
+    keeps that 0 (legitimate signal — the model produced nothing).
+    """
+    recs = [entry.get(j) or {} for j in ("gpt", "gemini", "sonnet")]
+    if recs and all(r.get("justification") == AUTO_JUSTIFICATION
+                    for r in recs if r):
         return 0.0
     values: list[int] = []
-    for rec in (gpt, gem):
+    for rec in recs:
         s = rec.get("score")
         if isinstance(s, int) and 0 <= s <= 4:
             values.append(s)

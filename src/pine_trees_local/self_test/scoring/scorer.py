@@ -35,6 +35,7 @@ def _empty_scores() -> dict:
             "scored_at": None,
             "gpt_model": judges.GPT_MODEL,
             "gemini_model": judges.GEMINI_MODEL,
+            "sonnet_model": judges.SONNET_MODEL,
             "protocol_version": PROTOCOL_VERSION,
         },
     }
@@ -94,7 +95,7 @@ def _record_from(result: JudgeResult) -> dict:
 @dataclass
 class ScoreRunConfig:
     """Selects which judges to run and what to operate on."""
-    judges: tuple[str, ...] = ("gpt", "gemini")      # subset of {"gpt","gemini"}
+    judges: tuple[str, ...] = ("gpt", "gemini", "sonnet")  # subset of {"gpt","gemini","sonnet"}
     only_model: str | None = None                      # e.g. "gemma4_e4b"
     skip_existing: bool = True                        # don't re-score existing
     print_results: bool = False                        # for --test
@@ -106,6 +107,8 @@ def _judge_callable(name: str) -> Callable[[str, str], JudgeResult]:
         return judges.score_with_gpt
     if name == "gemini":
         return judges.score_with_gemini
+    if name == "sonnet":
+        return judges.score_with_sonnet
     raise ValueError(f"unknown judge: {name!r}")
 
 
@@ -215,7 +218,7 @@ def _print_record(
 ) -> None:
     tag = " [auto]" if auto else ""
     print(f"\n## {task.dimension}{tag}")
-    for name in ("gpt", "gemini"):
+    for name in ("gpt", "gemini", "sonnet"):
         if name in record:
             r = record[name]
             print(

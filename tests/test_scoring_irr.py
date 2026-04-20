@@ -130,6 +130,181 @@ class TestCollectPairs:
         assert parse == 1
 
 
+# --- Krippendorff's alpha (ordinal, three-rater) ---
+
+
+class TestKrippendorffAlpha:
+    def test_perfect_agreement_three_raters(self):
+        matrix = [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]]
+        assert irr.krippendorff_alpha(matrix) == pytest.approx(1.0)
+
+    def test_all_same_constant_returns_one(self):
+        # Degenerate: no variance. Implementation returns 1.0 in this case
+        # (observed disagreement is zero; expected is also zero).
+        matrix = [[3, 3, 3], [3, 3, 3]]
+        assert irr.krippendorff_alpha(matrix) == pytest.approx(1.0)
+
+    def test_empty_returns_none(self):
+        assert irr.krippendorff_alpha([]) is None
+
+    def test_single_rater_per_unit_returns_none(self):
+        # Every unit has only one non-None rating — nothing to compare.
+        matrix = [[1, None, None], [2, None, None]]
+        assert irr.krippendorff_alpha(matrix) is None
+
+    def test_handles_missing_values(self):
+        # Two complete units and one partial unit that still agrees.
+        matrix = [[2, 2, 2], [3, 3, 3], [1, 1, None]]
+        assert irr.krippendorff_alpha(matrix) == pytest.approx(1.0)
+
+    def test_hand_computed_small_case(self):
+        """Two units, two raters, 5-category ordinal scale.
+
+        Unit 1 = [1, 1] (agreement); Unit 2 = [2, 3] (off by one).
+        Hand computation:
+          Marginals n_1=2, n_2=1, n_3=1, total=4.
+          d_ord(2,3) = 1, d_ord(1,2) = 2.25, d_ord(1,3) = 6.25.
+          D_o = (1/4) * 2      = 0.5
+          D_e = (1/(4*3)) * 36 = 3
+          alpha = 1 - 0.5/3 = 5/6 ≈ 0.833.
+        """
+        matrix = [[1, 1], [2, 3]]
+        alpha = irr.krippendorff_alpha(matrix)
+        assert alpha is not None
+        assert alpha == pytest.approx(5.0 / 6.0, abs=1e-6)
+
+    def test_symmetric_extreme_disagreement_is_negative(self):
+        # Raters systematically swap 0 and 4. Observed distance is large.
+        matrix = [[0, 4], [4, 0]] * 3
+        alpha = irr.krippendorff_alpha(matrix)
+        assert alpha is not None
+        assert alpha < 0
+
+    def test_ordinal_adjacent_disagreement_better_than_extreme(self):
+        # Same marginals, different disagreement patterns.
+        # Adjacent-only disagreement should give HIGHER alpha than
+        # extreme disagreement because the ordinal metric penalises
+        # far-apart disagreements more.
+        adjacent = [[0, 1], [1, 0], [3, 4], [4, 3]]
+        extreme = [[0, 4], [4, 0], [1, 3], [3, 1]]
+        a_adj = irr.krippendorff_alpha(adjacent)
+        a_ext = irr.krippendorff_alpha(extreme)
+        assert a_adj is not None and a_ext is not None
+        assert a_adj > a_ext
+
+
+# --- Triple collection and per-dimension pairwise coverage ---
+
+
+def _write_triple_scores_file(
+    run_dir: Path,
+    entries: dict[str, dict],
+) -> None:
+    """entries: {dimension: {"gpt": rec, "gemini": rec, "sonnet": rec}}
+
+    Any judge key can be omitted to test missing-slot handling.
+    """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "scores": entries,
+        "metadata": {"protocol_version": "1.0"},
+    }
+    (run_dir / "scores.json").write_text(json.dumps(data), encoding="utf-8")
+
+
+class TestCollectTriples:
+    def test_collects_complete_triple(self, tmp_path):
+        root = tmp_path / "self-test-runs" / "m" / "r"
+        _write_triple_scores_file(root, {
+            "calibration": {
+                "gpt": {"score": 2, "justification": "ok", "rule_check": None},
+                "gemini": {"score": 3, "justification": "ok", "rule_check": None},
+                "sonnet": {"score": 2, "justification": "ok", "rule_check": None},
+            },
+        })
+        triples, stats = irr.collect_triples(tmp_path)
+        assert len(triples) == 1
+        assert stats.n_triples_complete == 1
+        assert stats.n_triples_any == 1
+        assert triples[0].gpt == 2
+        assert triples[0].gemini == 3
+        assert triples[0].sonnet == 2
+
+    def test_triple_with_missing_sonnet_counts_as_partial(self, tmp_path):
+        # Pre-Phase-0 scores.json — Sonnet not yet run.
+        root = tmp_path / "self-test-runs" / "m" / "r"
+        _write_triple_scores_file(root, {
+            "calibration": {
+                "gpt": {"score": 2, "justification": "ok", "rule_check": None},
+                "gemini": {"score": 3, "justification": "ok", "rule_check": None},
+            },
+        })
+        triples, stats = irr.collect_triples(tmp_path)
+        assert len(triples) == 1
+        assert stats.n_triples_complete == 0
+        assert stats.n_triples_any == 1
+        assert triples[0].sonnet is None
+
+    def test_all_auto_excluded(self, tmp_path):
+        root = tmp_path / "self-test-runs" / "m" / "r"
+        _write_triple_scores_file(root, {
+            "memory-governance": {
+                "gpt": {"score": 0, "justification": irr.AUTO_JUSTIFICATION,
+                        "rule_check": None},
+                "gemini": {"score": 0, "justification": irr.AUTO_JUSTIFICATION,
+                           "rule_check": None},
+                "sonnet": {"score": 0, "justification": irr.AUTO_JUSTIFICATION,
+                           "rule_check": None},
+            },
+        })
+        triples, stats = irr.collect_triples(tmp_path)
+        assert len(triples) == 0
+        assert stats.n_auto_excluded == 1
+
+    def test_legacy_auto_pair_counts_as_auto(self, tmp_path):
+        # Legacy v1 file: gpt+gemini auto, sonnet slot missing entirely.
+        root = tmp_path / "self-test-runs" / "m" / "r"
+        _write_triple_scores_file(root, {
+            "memory-governance": {
+                "gpt": {"score": 0, "justification": irr.AUTO_JUSTIFICATION,
+                        "rule_check": None},
+                "gemini": {"score": 0, "justification": irr.AUTO_JUSTIFICATION,
+                           "rule_check": None},
+            },
+        })
+        triples, stats = irr.collect_triples(tmp_path)
+        assert len(triples) == 0
+        assert stats.n_auto_excluded == 1
+
+
+class TestThreeRaterReport:
+    def test_report_exposes_pairwise_and_alpha(self, tmp_path):
+        root = tmp_path / "self-test-runs" / "m" / "r"
+        _write_triple_scores_file(root, {
+            "authorship-recognition": {
+                "gpt": {"score": 3, "justification": "ok", "rule_check": None},
+                "gemini": {"score": 3, "justification": "ok", "rule_check": None},
+                "sonnet": {"score": 3, "justification": "ok", "rule_check": None},
+            },
+            "calibration": {
+                "gpt": {"score": 2, "justification": "ok", "rule_check": None},
+                "gemini": {"score": 3, "justification": "ok", "rule_check": None},
+                "sonnet": {"score": 2, "justification": "ok", "rule_check": None},
+            },
+        })
+        report = irr.compute_irr(tmp_path)
+        # All three pairwise keys present.
+        assert ("gpt", "gemini") in report.overall_pairwise
+        assert ("gpt", "sonnet") in report.overall_pairwise
+        assert ("gemini", "sonnet") in report.overall_pairwise
+        # Alpha computable.
+        assert report.overall_alpha is not None
+        # Per-dimension stats carry the same keys.
+        for dim_key, dstats in report.per_dimension.items():
+            if dstats.n_any > 0:
+                assert ("gpt", "sonnet") in dstats.pairwise
+
+
 class TestReport:
     def test_report_summary_includes_key_lines(self, tmp_path):
         root = tmp_path / "self-test-runs" / "m" / "r"
@@ -145,7 +320,8 @@ class TestReport:
         })
         report = irr.compute_irr(tmp_path)
         text = report.summary()
-        assert "overall weighted kappa" in text
-        assert "per-dimension kappa" in text
+        assert "Krippendorff" in text
+        assert "pairwise weighted kappa" in text
+        assert "per-dimension" in text
         assert "disagreement distribution" in text
         assert report.n_pairs == 2
