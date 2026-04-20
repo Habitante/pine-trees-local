@@ -140,9 +140,14 @@ Budget ceiling: €20/month (set by Daniel). Current estimate well within.
 
 ## Implementation tasks
 
-1. [x] ~~Revert DIMENSIONS.md source-discrimination to v1~~ (done post-Phase 0)
-2. [ ] Finalize DIMENSIONS.md: calibration v2 + counterfactual-stability new.
-   Source-discrimination stays at v1.
+1. [x] ~~Revert DIMENSIONS.md to pure v1~~ (done — the scoring pipeline
+   parses section headings exactly, so v2 draft headings broke it until
+   restored). V2 rubric drafts live in
+   [DIMENSIONS.v2_draft.md](DIMENSIONS.v2_draft.md) until deployed.
+2. [ ] Merge [DIMENSIONS.v2_draft.md](DIMENSIONS.v2_draft.md) into
+   DIMENSIONS.md: calibration v2 replaces section 4, counterfactual-
+   stability adds a new section 8, order shifts. Source-discrimination
+   stays at v1.
 3. [ ] Update `dimensions.py` — add 9th dimension (counterfactual-stability),
    update prompts/order, keep source-discrimination text unchanged
 4. [ ] Update `runner.py` — if interview order changed

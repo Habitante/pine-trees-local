@@ -387,7 +387,7 @@ class IRRReport:
         lines.append("overall pairwise weighted kappa:")
         for a, b in PAIRS:
             k = self.overall_pairwise.get((a, b))
-            label = f"{a}↔{b}"
+            label = f"{a}<->{b}"
             if k is None:
                 lines.append(f"  {label:<16} (no overlap)")
             else:
@@ -404,10 +404,10 @@ class IRRReport:
             f"{self.n_missing_slots} missing slots"
         )
         lines.append("")
-        lines.append("per-dimension (α and pairwise weighted κ):")
+        lines.append("per-dimension (alpha and pairwise weighted kappa):")
         header = (
-            f"  {'dimension':<30}  {'α':>6}   "
-            f"{'gpt↔gem':>8}  {'gpt↔son':>8}  {'gem↔son':>8}   n"
+            f"  {'dimension':<30}  {'alpha':>6}   "
+            f"{'gpt<->gem':>10}  {'gpt<->son':>10}  {'gem<->son':>10}   n"
         )
         lines.append(header)
         lines.append("  " + "-" * (len(header) - 2))
@@ -419,7 +419,7 @@ class IRRReport:
                 pair_cells.append(f"{k:+.3f}" if k is not None else "  ---")
             lines.append(
                 f"  {dim_key:<30}  {alpha_str:>6}   "
-                f"{pair_cells[0]:>8}  {pair_cells[1]:>8}  {pair_cells[2]:>8}   "
+                f"{pair_cells[0]:>10}  {pair_cells[1]:>10}  {pair_cells[2]:>10}   "
                 f"{dstats.n_complete}/{dstats.n_any}"
             )
         lines.append("")
@@ -472,7 +472,7 @@ def compute_irr(project_root: Path | None = None) -> IRRReport:
             n_complete=len(dim_complete),
         )
 
-    # --- Legacy gpt↔gemini disagreement distribution ---
+    # --- Legacy gpt<->gemini disagreement distribution ---
     distribution: dict[int, int] = {}
     for t in triples:
         if t.gpt is None or t.gemini is None:
