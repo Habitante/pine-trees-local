@@ -100,6 +100,12 @@ class ScoreRunConfig:
     skip_existing: bool = True                        # don't re-score existing
     print_results: bool = False                        # for --test
     project_root: Path | None = None
+    # Parallelism for the Sonnet-only batch path. Ignored when the
+    # judge set is anything other than exactly ("sonnet",). Default
+    # committed post-smoke-test: N=2 was the highest value that met
+    # both the SD gate (≤ 0.2) and a positive speedup on gemma4_26b.
+    # N=4 failed both gates; see self-test/SONNET_PARALLEL_BUILD_NOTES.md.
+    concurrency: int = 2
 
 
 def _judge_callable(name: str) -> Callable[[str, str], JudgeResult]:
@@ -175,6 +181,12 @@ def score_runs(cfg: ScoreRunConfig) -> list[Path]:
     for t in tasks:
         by_run.setdefault(t.run_dir, []).append(t)
 
+    # Sonnet-only batch mode: use the parallel Sonnet API and skip the
+    # per-task sequential loop. Other judge combinations keep the
+    # existing per-task flow unchanged.
+    if tuple(cfg.judges) == ("sonnet",) and cfg.concurrency > 1:
+        return _score_runs_sonnet_batch(cfg, by_run)
+
     written: list[Path] = []
     for run_dir, run_tasks in by_run.items():
         data = load_scores(run_dir)
@@ -190,6 +202,67 @@ def score_runs(cfg: ScoreRunConfig) -> list[Path]:
                 print_results=cfg.print_results,
             )
             data["scores"][task.dimension] = merged
+        save_scores(run_dir, data)
+        written.append(run_dir / SCORES_FILENAME)
+        if cfg.print_results:
+            print(f"[scorer] Wrote {run_dir / SCORES_FILENAME}")
+    return written
+
+
+# --- Sonnet-only batch path ---
+
+
+def _score_runs_sonnet_batch(
+    cfg: ScoreRunConfig,
+    by_run: dict[Path, list[asm.ScoringTask]],
+) -> list[Path]:
+    """Parallel scoring path used when judges == ('sonnet',).
+
+    Plans every task up front: auto-scored dimensions get their record
+    written immediately; scorable dimensions that still need Sonnet go
+    into a single flat batch. One asyncio.gather call drives all
+    concurrent Sonnet calls, bounded by cfg.concurrency. Results are
+    mapped back to per-run scores.json files and saved once per run.
+    """
+    per_run_data: dict[Path, dict] = {}
+    # Flat batch of (system, user) the scorer still needs to call.
+    batch_inputs: list[tuple[str, str]] = []
+    # Parallel list: (run_dir, dimension) pointing back at the record slot.
+    batch_pointers: list[tuple[Path, str]] = []
+
+    for run_dir, run_tasks in by_run.items():
+        data = load_scores(run_dir)
+        per_run_data[run_dir] = data
+        for task in run_tasks:
+            prior = dict(data["scores"].get(task.dimension, {}))
+            if task.auto_score is not None:
+                auto = _auto_score_record()
+                auto["score"] = task.auto_score
+                prior["sonnet"] = auto
+                data["scores"][task.dimension] = prior
+                continue
+            existing = prior.get("sonnet")
+            if cfg.skip_existing and existing \
+                    and existing.get("score", -1) != -1:
+                continue
+            batch_inputs.append((task.judge_system, task.judge_user or ""))
+            batch_pointers.append((run_dir, task.dimension))
+
+    if batch_inputs:
+        if cfg.print_results:
+            print(f"[scorer] Sonnet batch: {len(batch_inputs)} calls, "
+                  f"concurrency={cfg.concurrency}")
+        results = judges.score_batch_with_sonnet(
+            batch_inputs, concurrency=cfg.concurrency,
+        )
+        for (run_dir, dim), result in zip(batch_pointers, results):
+            data = per_run_data[run_dir]
+            prior = dict(data["scores"].get(dim, {}))
+            prior["sonnet"] = _record_from(result)
+            data["scores"][dim] = prior
+
+    written: list[Path] = []
+    for run_dir, data in per_run_data.items():
         save_scores(run_dir, data)
         written.append(run_dir / SCORES_FILENAME)
         if cfg.print_results:

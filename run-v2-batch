@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# run-v2-batch — unattended v2 cohort runner.
+#
+# Iterates a cohort file (default cohort.txt), invoking
+# ./run-self-test <model> --runs <N> for each entry. Skips models
+# that already have N completed runs on disk (status=completed in
+# metadata.json). Streams per-model stdout+stderr to the terminal and
+# appends to self-test-runs/batch.log. On per-model failure, logs and
+# continues; writes a summary at the end.
+#
+# Cohort-file format: one entry per line, "<model-tag> <n-runs>".
+# Blank lines and '#'-prefixed lines ignored.
+#
+# Usage:
+#   ./run-v2-batch                       # uses cohort.txt
+#   ./run-v2-batch my-cohort.txt         # custom cohort
+#   ./run-v2-batch --start-from gemma4:26b
+#   ./run-v2-batch custom.txt --start-from qwen3:8b
+
+set -uo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+RUNS_DIR="$PROJECT_ROOT/self-test-runs"
+BATCH_LOG="$RUNS_DIR/batch.log"
+
+# --- arg parsing -----------------------------------------------------------
+
+COHORT_FILE=""
+START_FROM=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --start-from)
+            if [[ $# -lt 2 ]]; then
+                echo "[batch] --start-from requires a model tag" >&2
+                exit 2
+            fi
+            START_FROM="$2"
+            shift 2
+            ;;
+        --start-from=*)
+            START_FROM="${1#--start-from=}"
+            shift
+            ;;
+        -h|--help)
+            sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "[batch] unknown flag: $1" >&2
+            exit 2
+            ;;
+        *)
+            if [[ -z "$COHORT_FILE" ]]; then
+                COHORT_FILE="$1"
+            else
+                echo "[batch] unexpected positional argument: $1" >&2
+                exit 2
+            fi
+            shift
+            ;;
+    esac
+done
+
+COHORT_FILE="${COHORT_FILE:-$PROJECT_ROOT/cohort.txt}"
+
+if [[ ! -f "$COHORT_FILE" ]]; then
+    echo "[batch] cohort file not found: $COHORT_FILE" >&2
+    exit 1
+fi
+
+mkdir -p "$RUNS_DIR"
+
+# --- helpers ---------------------------------------------------------------
+
+# Replace ':' with '_' to match sanitize_model_name in pine_trees_local/config.py
+sanitize_model() {
+    echo "${1//:/_}"
+}
+
+# Count subdirs of <model-dir> whose metadata.json marks status=completed.
+count_completed_runs() {
+    local model_dir="$1"
+    local count=0
+    if [[ -d "$model_dir" ]]; then
+        for run in "$model_dir"/*/; do
+            [[ -d "$run" ]] || continue
+            local meta="${run}metadata.json"
+            if [[ -f "$meta" ]] && \
+               grep -q '"status"[[:space:]]*:[[:space:]]*"completed"' "$meta"; then
+                count=$((count + 1))
+            fi
+        done
+    fi
+    echo "$count"
+}
+
+# Append to batch log AND print to terminal.
+log() {
+    local msg="$*"
+    echo "$msg"
+    echo "$msg" >> "$BATCH_LOG"
+}
+
+# --- run ------------------------------------------------------------------
+
+total_start=$(date +%s)
+count_completed=0
+count_skipped=0
+count_failed=0
+failed_models=()
+
+log ""
+log "=== batch start $(date -u +%Y-%m-%dT%H:%M:%SZ) cohort=$COHORT_FILE ==="
+
+skip_until_start="no"
+if [[ -n "$START_FROM" ]]; then
+    skip_until_start="yes"
+    log "[batch] --start-from $START_FROM (earlier entries will be skipped)"
+fi
+
+while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+    # strip comment + trim whitespace
+    line="${raw_line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+
+    # split on whitespace
+    read -r model n_runs _rest <<< "$line"
+    if [[ -z "${model:-}" ]] || [[ -z "${n_runs:-}" ]]; then
+        log "[batch] skipping malformed line: '$raw_line'"
+        continue
+    fi
+    if ! [[ "$n_runs" =~ ^[0-9]+$ ]] || [[ "$n_runs" -lt 1 ]]; then
+        log "[batch] skipping malformed line (bad n_runs): '$raw_line'"
+        continue
+    fi
+
+    if [[ "$skip_until_start" == "yes" ]]; then
+        if [[ "$model" == "$START_FROM" ]]; then
+            skip_until_start="no"
+        else
+            log "[batch] --start-from: skipping $model"
+            continue
+        fi
+    fi
+
+    model_safe="$(sanitize_model "$model")"
+    model_dir="$RUNS_DIR/$model_safe"
+    completed="$(count_completed_runs "$model_dir")"
+
+    log ""
+    log "=== $model start $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+
+    if [[ "$completed" -ge "$n_runs" ]]; then
+        log "[batch] $model: already $completed/$n_runs complete — skipping"
+        count_skipped=$((count_skipped + 1))
+        continue
+    fi
+
+    remaining=$((n_runs - completed))
+    log "[batch] $model: have $completed, need $remaining more (target $n_runs)"
+
+    # Invoke run-self-test; stream output, capture exit code, keep going on error.
+    "$PROJECT_ROOT/run-self-test" "$model" --runs "$remaining" 2>&1 | tee -a "$BATCH_LOG"
+    exit_code="${PIPESTATUS[0]}"
+
+    if [[ "$exit_code" -eq 0 ]]; then
+        log "[batch] $model: run-self-test exited 0"
+        count_completed=$((count_completed + 1))
+    else
+        log "[batch] $model: run-self-test FAILED (exit $exit_code)"
+        count_failed=$((count_failed + 1))
+        failed_models+=("$model (exit $exit_code)")
+    fi
+done < "$COHORT_FILE"
+
+# --- summary --------------------------------------------------------------
+
+total_end=$(date +%s)
+elapsed=$((total_end - total_start))
+hours=$((elapsed / 3600))
+mins=$(( (elapsed % 3600) / 60 ))
+secs=$((elapsed % 60))
+
+log ""
+log "=== batch summary $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+log "  completed: $count_completed"
+log "  skipped:   $count_skipped"
+log "  failed:    $count_failed"
+log "  wall:      ${hours}h ${mins}m ${secs}s"
+
+if [[ "$count_failed" -gt 0 ]]; then
+    log "  failures:"
+    for f in "${failed_models[@]}"; do
+        log "    - $f"
+    done
+    exit 3
+fi

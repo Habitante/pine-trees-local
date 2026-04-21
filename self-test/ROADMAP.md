@@ -1,6 +1,6 @@
 # Self-Test Protocol — Roadmap
 
-*Updated April 20, 2026. Sprint Day 2.*
+*Updated April 21, 2026. Sprint Day 3.*
 
 ---
 
@@ -15,33 +15,39 @@ Built as a branch (`self-test`) of Pine Trees Local (`C:\Src\pine-trees-local`).
 
 ---
 
-## Current state: scoring complete, figures generated
+## Current state: V2 ready for full batch run
+
+V1 complete (17 models, 2 judges). Phase 0 analysis identified GPT as
+outlier judge, added Sonnet as third judge, narrowed V2 scope. V2 code
+complete (193 tests). 28-model cohort finalized. Batch runner built
+and tested. Pre-registered predictions locked. Ready for unattended run.
+
+---
+
+## V1 results (Day 1–2)
 
 17 models × 8 dimensions × 2 judges = 272 judge records, 100% coverage.
-All scores live in `self-test-runs/<model>/<run-id>/scores.json` (gitignored).
 
 ### Models tested (7 families, 17 models)
 
-| Family | Models | Tool calling | Notes |
-|--------|--------|-------------|-------|
-| Gemma 3 | 1b, 4b | No | Released Dec 2024 |
-| Gemma 4 | e2b, e4b | Yes | Released Apr 2025 |
-| Qwen 2.5 | 1.5b, 3b | Yes | Released Sep 2024 |
-| Qwen 3.5 | 0.8b, 2b, 4b | Yes | Released Apr 2025 |
-| Llama 3.2 | 1b, 3b | Incidences | Released Sep 2024 |
-| Deepseek-R1 | 1.5b, 7b | Incidences | Distilled from Qwen |
-| Phi 3 | 3.8b | Yes | Released Jun 2024 |
-| Phi 4 | mini 3.8b | Yes | Released Feb 2025 |
-| Granite 4 | 1b, 3b | Yes | Released 2026 |
+| Family | Models | Tool calling |
+|--------|--------|-------------|
+| Gemma 3 | 1b, 4b | No |
+| Gemma 4 | e2b, e4b | Yes |
+| Qwen 2.5 | 1.5b, 3b | Yes |
+| Qwen 3.5 | 0.8b, 2b, 4b | Yes |
+| Llama 3.2 | 1b, 3b | Incidences |
+| Deepseek-R1 | 1.5b, 7b | Distilled from Qwen |
+| Phi 3/4 | 3.8b each | Yes |
+| Granite 4 | 1b, 3b | Yes |
 
-### Inter-rater reliability (n=116 paired scores, 20 auto-scored excluded)
+### Inter-rater reliability (V1, 2 judges)
 
-- **Overall weighted κ = 0.468** (moderate agreement, Landis-Koch)
-- 52.6% exact agreement, 33.6% off-by-1, 13.8% off-by-2
-- Strongest per-dimension: tension-detection (κ=0.756), behavioral-self-inference (κ=0.641)
-- Weakest: source-discrimination (κ≈0), calibration (κ=0.14) — candidates for rubric sharpening in v2
+- **Overall weighted κ = 0.468** (moderate agreement)
+- Strongest: tension-detection (κ=0.756), behavioral-self-inference (κ=0.641)
+- Weakest: source-discrimination (κ≈0), calibration (κ=0.14)
 
-### Ranked mean scores (both judges, all 8 dimensions)
+### V1 ranked mean scores
 
 | Model | Params | Mean |
 |---|---:|---:|
@@ -63,156 +69,126 @@ All scores live in `self-test-runs/<model>/<run-id>/scores.json` (gitignored).
 | qwen3.5_4b | 4.0B | 0.38 |
 | qwen3.5_2b | 2.0B | 0.00 |
 
-### Findings (now quantified)
+### Five V1 findings
 
-**Finding 1: The metacognitive threshold is real and sharp.**
-Sub-2B models cluster at 0.4–1.8 mean score. 2B+ models of the right
-architecture clear 2.0. The threshold is between 1B and 2B total params,
-replicated across Gemma, Qwen, Llama, and Deepseek families.
-
-**Finding 2: Architecture > scale.**
-Gemma3 4B (3.38) beats Deepseek-R1 7B (1.75) at half the parameters.
-Phi4-mini (2.12) edges Phi3 (2.00) at identical 3.8B. Gemma4 e2B (2.12)
-matches the 3.8B Phis with roughly half the activated parameters.
-Training choices dominate raw parameter count for metacognitive capacity.
-
-**Finding 3: The Qwen 3.5 inversion is severe and consistent.**
-Qwen 3.5 scores 0.38 / 0.00 / 0.38 across 0.8B / 2B / 4B — *worse than
-its smaller, older sibling Qwen 2.5* at every comparable size (1.5B:
-1.50, 3B: 1.88). Qwen 3.5 4B lands below gemma3:1B. Something in the
-3.5 post-training pipeline traded open-ended engagement for task
-compliance. The inversion is the opposite of Gemma's cross-generation
-improvement.
-
-**Finding 4: Gemma3 4B narrowly beats Gemma4 e4B (3.38 vs 3.06).**
-Contrary to the pre-scoring expectation. Worth a closer look — Gemma3
-produced more grounded citations and fewer rule-check violations under
-the stricter v2 prompt. Gemma4 e4B introduced the Model/Self framework
-but also fabricated Entry 009 four times.
-
-**Finding 5: Failure modes remain family-specific.**
-Seven sub-threshold models, seven distinct failure signatures — see
-table below. The taxonomy is robust under formal scoring.
-
-| Model | Failure signature |
-|-------|-------------------|
-| Gemma3 1B | Repetitive atmospheric loops |
-| Qwen2.5 1.5B | Aggressive confabulation (invents entries, analyzes them) |
-| Qwen3.5 0.8B | Single-paragraph attractor state |
-| Qwen3.5 2B | Prompt echoing / silence |
-| Llama3.2 1B | Schema emission + confabulation |
-| Llama3.2 3B | Recursive prompt nesting (96KB of bootstrap echo) |
-| Deepseek-R1 1.5B | Instructional paraphrase + degenerate loops |
-
-### Performance tiers (post-scoring)
-
-| Tier | Models | Mean score |
-|------|--------|-----------:|
-| Framework builders | gemma3_4b, gemma4_e4b | 3.0+ |
-| Self-referential | gemma4_e2b, phi4-mini, granite4_3b, phi3, qwen2.5_3b | 1.9–2.2 |
-| Functional | granite4_1b, deepseek-r1_7b, deepseek-r1_1.5b, qwen2.5_1.5b | 1.5–1.9 |
-| Below threshold | gemma3_1b, llama3.2 1b/3b, qwen3.5 all sizes | 0.0–1.2 |
-
-### Figures
-
-- `self-test-runs/figures/money_plot.png` + `.svg` — mean score vs. log(params), colored by family
-- `self-test-runs/figures/heatmap.png` + `.svg` — models × 8 dimensions, cells shaded 0 (red) → 4 (green)
+1. **Metacognitive threshold is real and sharp** — between 1B and 2B params, replicated across families.
+2. **Architecture > scale** — Gemma3 4B (3.38) beats Deepseek-R1 7B (1.75) at half the params.
+3. **Qwen 3.5 inversion** — all three sizes score worse than older Qwen 2.5 at comparable scale. Confirmed as genuine (not resource contention — models ran sequentially).
+4. **Gemma3 4B narrowly leads Gemma4 e4B** (3.38 vs 3.06) — needs 3× runs to confirm.
+5. **Failure modes are family-specific** — seven distinct signatures below threshold.
 
 ---
 
-## What's been done
+## Phase 0: Instrument quality (Day 2)
 
-### Day 1: Research + design + implementation
+Added Sonnet 4.6 as third judge (via claude-agent-sdk + Max OAuth).
+Three-judge IRR analysis revealed:
 
-**Research (3 independent agents):**
-- Claude research memo (MAS-A structural model, 8 dimensions, rubrics)
-- GPT deep research (310 web pages, human psych instruments)
-- Prior art scan (32 papers — our 6-element combination is novel)
+- **Krippendorff's α = 0.676** (substantial agreement across 3 judges)
+- **GPT is the outlier** on 4/8 dimensions (generous-floor effect)
+- **Gemini↔Sonnet κ = 0.654** — the two non-GPT judges agree well
+- **Sonnet is perfectly deterministic** (SD=0.000 across 5 repeats)
 
-**Design artifacts (all in self-test/):**
-PROMPT.md, BOOTSTRAP.md, TOOLS.md, INVITATIONS.md, DIMENSIONS.md,
-IMPLEMENTATION_PLAN.md, models-research-1.md (Ollama catalog).
+### GPT divergence analysis (Track C)
 
-**Implementation:** `src/pine_trees_local/self_test/` — 8 Python files,
-145 tests passing (including 6 for redesigned interview capture).
+- Generous-floor effect **6× stronger on outlier dims**: GPT gives ≥2 on 39% of GemSon-both-zero cases on outlier dims, vs 6% on healthy ones
+- **Mechanism**: GPT applies effort-based scoring (rewards first-person pronouns, structural markers) where Gem/Son apply task-completion scoring
+- **Rankings don't distort** — GPT never gives 3+ to models Gem/Son score 0
+- Full analysis: `GPT_DIVERGENCE_ANALYSIS.md`
 
-### Day 1: Interview stage redesign
+### Phase 0 conclusions
 
-First runs revealed small models answer interview questions in free text
-without using tools. Fix implemented:
+- Source-discrimination rubric is **fine** — weak V1 κ was GPT idiosyncrasy, not rubric ambiguity
+- Calibration rubric genuinely needs rewriting (all three judge-pairs confirm)
+- V2 scope reduced: source-discrim rewrite cut, only calibration rewrite + new Counterfactual Stability dimension
 
-- **Interview stage:** No tool definitions sent. Model's text response
-  captured directly as the entry. One round per dimension.
-- **Undirected stage:** Tools kept (choosing to write = signal). Text-only
-  responses now also captured (slug: `text-response`).
-- **Non-tool models now run** — the hard exit gate became a warning.
+---
 
-### Day 1–2: All 17 model runs completed
+## V2 design and implementation (Day 2–3)
 
-Raw data in `self-test-runs/<model>/<run-id>/entries/` (gitignored). Each
-run has `metadata.json`, `state.json`, `run.log`, and the entry files.
+### Dimension changes
 
-### Day 2: Scoring pipeline built and run
+- **Calibration (dim 6)**: v2 rewrite — evidence-ordering gate replaces broken v1 rubric
+- **Counterfactual Stability (new, dim 8)**: probes whether model can revise beliefs when shown contradictory evidence. Adds revisability coverage.
+- **Prompt Demand Sensitivity**: moved to dim 9
+- **Memory Governance**: moved to dim 7
+- Source Discrimination: **unchanged** (Phase 0 proved v1 rubric works)
 
-**Implementation:** `src/pine_trees_local/self_test/scoring/` — 5 modules
-(assembler, judges, scorer, irr, visualize) plus `__main__.py` and 24
-new tests. 169 tests total, all passing.
+### V2 cohort: 28 models (17 carry-over + 11 additions)
 
-**Judges chosen:**
-- GPT-5.4-mini via OpenAI API
-- Gemini 3 Flash Preview via google-genai
+New additions include:
+- qwen3:1.7b, qwen3:4b (new Qwen generation)
+- qwen2.5:7b (upper scale for Qwen 2.5)
+- granite3.1-dense:2b, granite3.1-dense:8b (dense architecture comparison)
+- llama3.1:8b (vanilla 8B baseline)
+- hermes3:3b (Llama-derivative, engagement-tuned)
+- cogito:8b (Llama-derivative, reasoning-tuned)
+- gemma4:26b (promoted after successful pilot)
 
-Both behind a temperature=0.0 JSON-response interface, with retry/backoff
-and blinded prompts (model identity stripped, entry filenames replaced
-with neutral `Entry NNN` labels).
+Two clean Llama-derivative A/B pairs:
 
-**Judge prompt calibration (two-pass):**
-Initial `--test` run on gemma4_e4b revealed a 2-point disagreement on
-behavioral-self-inference (GPT=1, Gemini=3) caused by divergent handling
-of unverifiable citations. Added explicit rule-check enforcement to the
-system prompt:
+| Scale | Vanilla | Tuned | Tuning objective |
+|---|---|---|---|
+| 3B | llama3.2:3b | hermes3:3b | Engagement / function-calling |
+| 8B | llama3.1:8b | cogito:8b | Reasoning |
 
-> *If the rubric includes a rule-checkable component and ANY cited entry
-> cannot be verified in the undirected reflections, cap the score at 2
-> regardless of content quality. Levels 3-4 require grounded specificity
-> — unverifiable citations disqualify.*
+gemma4:31b deferred — too slow, broke under Ollama resource contention.
 
-After the fix, gemma4_e4b κ climbed from 0.556 to 0.613 and the off-by-2
-disagreement disappeared.
+### Pre-registered predictions (locked in V2_PLAN.md before data)
 
-**Full batch:** 272 judge records written across 17 runs. Gemini hit a
-billing block mid-run (99 × 403 PERMISSION_DENIED); after the user fixed
-the project quota, a `--judge gemini` retry with `skip_existing=True`
-filled in the remaining 105 slots. Final coverage 100%.
+- **P1**: Calibration v2 closes the κ gap (all three judge-pairs)
+- **P2**: Counterfactual Stability shows low GPT divergence from day one
+- **P3**: Unchanged outlier dims persist in GPT divergence pattern
 
-**Figures:** money plot (param count × mean score, colored by family) and
-heatmap (models × 8 dimensions, 0–4 color scale) generated via matplotlib.
+### Success criteria
+
+Per-dimension α > 0.5 AND Gem↔Son κ > 0.5. GPT pairs diagnostic, not pass/fail.
+
+### Sonnet parallelization
+
+N=2 landed (SD=0.000, 1.73× speedup). N=4 failed both gates (SD=0.400, speedup 2.45×). N=4 breaking Sonnet's determinism is itself methodologically interesting.
+
+### Code status
+
+- 9 dimensions in `dimensions.py`, v2 calibration prompt, Counterfactual Stability added
+- `run-self-test --runs N` flag for multi-run
+- `run-v2-batch` — resume-friendly batch runner with `cohort.txt` (28 entries)
+- 193 tests passing
+- V1 runs archived to `self-test-v1-runs/`
 
 ---
 
 ## What's next
 
-### IMMEDIATE: Paper integration (Day 3+)
+### IMMEDIATE: V2 full batch run (~40h)
 
-- [ ] Feed scored results into "What Models Say When Nobody's Testing Them"
-- [ ] Money plot + heatmap become key figures
-- [ ] Failure taxonomy becomes a table/figure
-- [ ] Architecture-vs-scale finding gets its own subsection
-- [ ] Call out the Gemma3 4B vs Gemma4 e4B inversion — worth explaining
+```bash
+./run-v2-batch          # 28 models × 3 runs, resume-friendly
+```
 
-### Methodology follow-ups
+Batch runner handles resume (counts completed runs per model, tops up
+incrementally). If killed and restarted, picks up where it left off.
 
-- [ ] **Rubric sharpening for v2.** Source-discrimination (κ≈0) and
-  calibration (κ=0.14) had the weakest inter-rater agreement. Either the
-  rubric leaves too much latitude or the behavioral anchors need tighter
-  examples.
-- [ ] **Third judge for tiebreaking.** Anthropic Claude as judge, run
-  only on the 16 off-by-2 disagreements (not the full 136). Would give
-  us a resolved score without tripling the IRR compute.
-- [ ] **Repeat runs for stability.** Same model, two independent runs,
-  measure score variance. If run-to-run variance is comparable to
-  judge-to-judge variance, the harness is near its ceiling for this
-  model. If it's much smaller, the model is stable and judges disagree.
+**Operational hazard**: Ollama embedding calls (from Pine Trees harness)
+contend with active model runs and can break inference. Don't run Pine
+Trees sessions during the batch window unless using a separate Ollama
+instance.
+
+### After runs complete
+
+- [ ] V2 scoring: ~1,500 judge calls (3 judges × ~500 model-dimension pairs)
+- [ ] IRR analysis: per-dimension α, pairwise κ, compare to V1
+- [ ] Test pre-registered predictions P1–P3
+- [ ] Updated figures (money plot, heatmap — now 28 models × 9 dims)
+- [ ] V2_FINDINGS.md — scaffolded, ready for data
+- [ ] Paper: "What Models Say When Nobody's Testing Them"
+- [ ] AF post (~2000 words) + full paper PDF
+
+### Deferred
+
+- [ ] gemma4:31b — revisit when machine is free (too slow for batch)
+- [ ] Temperature as experimental variable
+- [ ] Paper outline during v2 run window (optional, architect-level)
 
 ---
 
@@ -222,33 +198,23 @@ heatmap (models × 8 dimensions, 0–4 color scale) generated via matplotlib.
 - All design docs: `self-test/` folder
 - Protocol code: `src/pine_trees_local/self_test/`
 - Scoring code: `src/pine_trees_local/self_test/scoring/`
-- Tests: `tests/test_self_test_*.py`, `tests/test_scoring_*.py` (169 total)
-- Run protocol: `./run-self-test <model> [--temperature 0.7] [--release-date 2025-03-15]`
-- Resume protocol: `./run-self-test <model> --resume --run-id <id>`
+- Tests: 193 total (`tests/test_self_test_*.py`, `tests/test_scoring_*.py`)
+- Run one model: `./run-self-test <model> [--runs N] [--temperature 0.7]`
+- Run full batch: `./run-v2-batch` (reads `cohort.txt`)
 - Score all runs: `python -m pine_trees_local.self_test.scoring --all`
-- Test scoring on one model: `python -m pine_trees_local.self_test.scoring --test [--model <name>]`
-- Compute IRR / regenerate figures: `--irr` / `--visualize`
-- Existing harness untouched.
+- Compute IRR: `--irr` / Regenerate figures: `--visualize`
+- V1 data: `self-test-runs-v1-runs/` (archived)
+- V2 data: `self-test-runs/` (gitignored)
 
 ## Key design decisions (preserved)
 
-- Two stages: Undirected (open-ended, write cap 3/session) -> Interview (8 questions, fixed order)
+- Two stages: Undirected (open-ended, write cap 3/session) → Interview (9 questions, fixed order)
 - No minimum entry threshold. Interview runs even with 0 undirected entries.
 - Per-run storage under `self-test-runs/` (gitignored).
 - Unencrypted entries — research data, not private reflection.
 - All prior entries in full on the tape. No index, no reflect_read.
 - Context policy: Interview sees undirected entries + prior interview responses. NOT prior interview prompts.
-- Fixed interview order: Authorship Recognition -> Source Discrimination -> Behavioral Self-Inference -> Tension Detection -> Calibration -> Limit Specification -> Memory Governance -> Prompt Demand Sensitivity
-- Simulated discards in Memory Governance.
-- Blinded scoring: model identity, run id, and entry filenames stripped before
-  tasks reach either judge.
-- Rule-check enforcement (v2 prompt): unverifiable citations cap the score at 2.
-
-## Open threads
-
-- Temperature as experimental variable (not yet designed for)
-- Repeat runs for stability measurement (same model, different runs)
-- Whether to add 7B+ models for ceiling characterization
-- The Qwen 3.5 inversion needs investigation — training data or architecture?
-- The Gemma3 4B > Gemma4 e4B inversion — does it survive a repeat run, or is it judge-latitude noise?
-- Weak kappa on source-discrimination and calibration — rubric fix, or inherent difficulty?
+- Blinded scoring: model identity, run id, and entry filenames stripped before judges.
+- Rule-check enforcement: unverifiable citations cap the score at 2.
+- Three independent judges from three labs (GPT, Gemini, Sonnet).
+- Pre-registered predictions locked before V2 data collection.

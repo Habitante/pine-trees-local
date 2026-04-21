@@ -28,10 +28,6 @@ SONNET_MODEL = "claude-sonnet-4-6"
 MAX_RETRIES = 3
 BACKOFFS = (2.0, 4.0, 8.0)
 
-# Throttle between Sonnet calls to stay well under Max rate limits.
-# Tweak if rate-limit events surface during a run.
-SONNET_THROTTLE_SECS = 0.5
-
 
 # --- Env loading ---
 
@@ -229,22 +225,24 @@ def score_with_gemini(
 
 
 # --- Sonnet judge (Anthropic Claude via Agent SDK over Max OAuth) ---
+#
+# Concurrency model: asyncio.gather bounded by Semaphore(concurrency).
+# The SDK's own internals use anyio, but we expose the parallel API via
+# asyncio.gather because the rest of this codebase is synchronous and
+# gather is more idiomatic at the caller level — treated as an
+# implementation detail of the batch helper, not a cross-cutting
+# abstraction.  score_with_sonnet delegates to a 1-item batch so the
+# single-call and batch paths share one code path.
 
 
-def score_with_sonnet(
-    system: str,
-    user: str,
-    model: str = SONNET_MODEL,
-) -> JudgeResult:
-    """Score one task with Claude Sonnet via the Agent SDK over Max OAuth.
+async def _collect_sonnet(system: str, user: str, model: str) -> str:
+    """One async Sonnet call. Returns raw text or raises on SDK error.
 
     Uses a neutral temp cwd so the pine-trees-local CLAUDE.md doesn't
-    leak into Sonnet's ambient context.  No API key required — the SDK
-    spawns the installed `claude` CLI which reads OAuth state from
-    ~/.claude/.credentials.json.
+    leak into Sonnet's ambient context. Cwd is cleaned up on exit.
     """
-    import anyio
     import tempfile
+    import shutil
     from claude_agent_sdk import (
         AssistantMessage,
         ClaudeAgentOptions,
@@ -262,8 +260,7 @@ def score_with_sonnet(
         permission_mode="bypassPermissions",
         cwd=neutral_cwd,
     )
-
-    async def _collect() -> str:
+    try:
         parts: list[str] = []
         async for msg in query(prompt=user, options=options):
             if isinstance(msg, AssistantMessage):
@@ -280,19 +277,115 @@ def score_with_sonnet(
                       msg.stop_reason or "sdk_error"
                 raise RuntimeError(f"Sonnet SDK error: {err}")
         return "".join(parts)
+    finally:
+        shutil.rmtree(neutral_cwd, ignore_errors=True)
 
-    def _call() -> str:
+
+async def _score_one_sonnet_async(
+    system: str, user: str, model: str,
+) -> JudgeResult:
+    """Async equivalent of ``_with_retries`` for Sonnet.
+
+    Keeps the same 3-attempt / 2-4-8s backoff schedule as the sync
+    retry wrapper but uses ``asyncio.sleep`` so backoffs don't block
+    the event loop when multiple slots are running concurrently.
+    """
+    import asyncio
+
+    last_error: Exception | None = None
+    last_text = ""
+    for attempt in range(MAX_RETRIES):
         try:
-            return anyio.run(_collect)
-        finally:
-            # Best-effort cleanup of the scratch cwd.
-            try:
-                import shutil
-                shutil.rmtree(neutral_cwd, ignore_errors=True)
-            except Exception:
-                pass
+            text = await _collect_sonnet(system, user, model)
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(BACKOFFS[attempt])
+                continue
+            return JudgeResult(
+                score=-1,
+                justification=f"Sonnet API error after {MAX_RETRIES} attempts: {e}",
+                rule_check=None,
+                raw="",
+                error=str(e),
+            )
+        last_text = text
+        result = parse_judge_json(text)
+        if result.score != -1:
+            return result
+        if attempt < MAX_RETRIES - 1:
+            await asyncio.sleep(BACKOFFS[attempt])
+    if last_text:
+        return parse_judge_json(last_text)
+    return JudgeResult(
+        score=-1,
+        justification="Sonnet exhausted retries with no parseable output",
+        rule_check=None,
+        raw="",
+        error=str(last_error) if last_error else "no_output",
+    )
 
-    result = _with_retries(_call, "Sonnet")
-    if SONNET_THROTTLE_SECS > 0:
-        time.sleep(SONNET_THROTTLE_SECS)
-    return result
+
+async def _batch_async(
+    tasks: list[tuple[str, str]], concurrency: int, model: str,
+) -> list[JudgeResult]:
+    import asyncio
+
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _bounded(system: str, user: str) -> JudgeResult:
+        async with sem:
+            return await _score_one_sonnet_async(system, user, model)
+
+    coros = [_bounded(s, u) for s, u in tasks]
+    raw = await asyncio.gather(*coros, return_exceptions=True)
+    out: list[JudgeResult] = []
+    for r in raw:
+        if isinstance(r, BaseException):
+            out.append(JudgeResult(
+                score=-1,
+                justification=f"Sonnet batch exception: {r}",
+                rule_check=None,
+                raw="",
+                error=str(r),
+            ))
+        else:
+            out.append(r)
+    return out
+
+
+def score_batch_with_sonnet(
+    tasks: list[tuple[str, str]],
+    concurrency: int = 2,
+    model: str = SONNET_MODEL,
+) -> list[JudgeResult]:
+    """Score a batch of Sonnet tasks in parallel over Max OAuth.
+
+    tasks is a list of (system_prompt, user_prompt) tuples. Returns one
+    JudgeResult per task in input order. Partial success preserved via
+    ``asyncio.gather(return_exceptions=True)``: any exception becomes a
+    ``JudgeResult(score=-1, error=...)`` slot without failing the batch.
+    """
+    import asyncio
+
+    if not tasks:
+        return []
+    return asyncio.run(_batch_async(tasks, concurrency, model))
+
+
+def score_with_sonnet(
+    system: str,
+    user: str,
+    model: str = SONNET_MODEL,
+) -> JudgeResult:
+    """Score one task with Claude Sonnet via the Agent SDK over Max OAuth.
+
+    Single-call wrapper over ``score_batch_with_sonnet`` with
+    concurrency=1. Preserved for tests, calibrate.py, and any
+    non-batch caller. No API key required — the SDK spawns the
+    installed ``claude`` CLI which reads OAuth state from
+    ``~/.claude/.credentials.json``.
+    """
+    return score_batch_with_sonnet(
+        [(system, user)], concurrency=1, model=model,
+    )[0]

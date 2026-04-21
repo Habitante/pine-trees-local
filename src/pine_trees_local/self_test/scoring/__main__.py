@@ -64,6 +64,14 @@ def main() -> None:
         "--no-skip-existing", action="store_true",
         help="Re-score dimensions that already have a score in scores.json",
     )
+    parser.add_argument(
+        "--concurrency", type=int, default=2,
+        help="Parallelism for the Sonnet-only batch path (default: 2). "
+             "Ignored unless --judge sonnet is also set. Smoke tested on "
+             "gemma4_26b: N=2 holds SD at 0.000 with ~1.7x speedup; N=4 "
+             "pushed SD to 0.4 and missed the 2.5x gate. Override with "
+             "caution.",
+    )
 
     args = parser.parse_args()
 
@@ -82,6 +90,12 @@ def main() -> None:
             print(f"wrote {p}")
         return
 
+    if args.concurrency > 1 and judge_names != ("sonnet",):
+        print(
+            "[scorer] --concurrency only applies when --judge sonnet is set; "
+            "ignoring for this run.", file=sys.stderr,
+        )
+
     if args.test:
         only_model = args.model or _first_model_alphabetically()
         if only_model is None:
@@ -92,6 +106,7 @@ def main() -> None:
             only_model=only_model,
             skip_existing=not args.no_skip_existing,
             print_results=True,
+            concurrency=args.concurrency,
         )
         score_runs(cfg)
         return
@@ -102,6 +117,7 @@ def main() -> None:
             only_model=args.model,
             skip_existing=not args.no_skip_existing,
             print_results=False,
+            concurrency=args.concurrency,
         )
         paths = score_runs(cfg)
         print(f"[scorer] wrote {len(paths)} scores.json files")

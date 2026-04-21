@@ -4,6 +4,7 @@ model.txt
 
 # Self-test runs (research output, not committed)
 self-test-runs/
+self-test-v1-runs/
 
 # Python
 __pycache__/
