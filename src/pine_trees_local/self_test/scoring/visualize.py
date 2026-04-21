@@ -11,6 +11,7 @@ from .irr import AUTO_JUSTIFICATION
 
 
 PARAM_COUNTS: dict[str, float] = {
+    # v1 cohort (17 models)
     "gemma3_1b": 1.0, "gemma3_4b": 4.0,
     "gemma4_e2b": 2.0, "gemma4_e4b": 4.0,
     "qwen2.5_1.5b": 1.5, "qwen2.5_3b": 3.0,
@@ -19,20 +20,49 @@ PARAM_COUNTS: dict[str, float] = {
     "deepseek-r1_1.5b": 1.5, "deepseek-r1_7b": 7.0,
     "phi3_3.8b": 3.8, "phi4-mini_3.8b": 3.8,
     "granite4_1b": 1.0, "granite4_3b": 3.0,
+    # v2 additions
+    "qwen3_1.7b": 1.7, "qwen3_4b": 4.0, "qwen3_8b": 8.0,
+    "qwen2.5_7b": 7.0,
+    "qwen3.5_27b": 27.0,
+    "granite3.1-dense_2b": 2.0, "granite3.1-dense_8b": 8.0,
+    # Llama-derivative matched pairs — paper-relevant controls.
+    # llama3.2:3b (vanilla) is paired with hermes3:3b (engagement-tuned,
+    # same base) at 3B. llama3.1:8b (vanilla) is paired with cogito:8b
+    # (reasoning-tuned, same base) at 8B. Together these test two
+    # post-training paradigms at two scales against vanilla controls.
+    "llama3.1_8b": 8.0,
+    "hermes3_3b": 3.0,
+    "cogito_8b": 8.0,
+    # Conditional pilot (add only if the 27B hardware budget lands)
+    "gemma4_26b": 26.0,
 }
 
 FAMILY_COLORS: dict[str, str] = {
     "gemma": "#1f77b4",      # blue
     "qwen": "#ff7f0e",       # orange
-    "llama": "#2ca02c",      # green
+    "llama": "#2ca02c",      # green (includes hermes3 and cogito derivatives)
     "deepseek": "#d62728",   # red
     "phi": "#9467bd",        # purple
     "granite": "#8c564b",    # brown
 }
 
 
+# Llama-derivative aliases: hermes3 is engagement-tuned from llama3.2;
+# cogito is reasoning-tuned from llama3.1. Both share the Llama base and
+# are plotted under the Llama family color so the v2 paper's A/B pairs
+# (llama3.2:3b vs hermes3:3b, llama3.1:8b vs cogito:8b) stay legible at
+# a glance — same color, different per-dot labels.
+_FAMILY_ALIASES: dict[str, str] = {
+    "hermes": "llama",
+    "cogito": "llama",
+}
+
+
 def _family_of(model_safe: str) -> str:
     lower = model_safe.lower()
+    for prefix, fam in _FAMILY_ALIASES.items():
+        if lower.startswith(prefix):
+            return fam
     for fam in FAMILY_COLORS:
         if lower.startswith(fam):
             return fam

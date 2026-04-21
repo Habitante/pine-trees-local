@@ -213,7 +213,14 @@ authorship-recognition, memory-governance, prompt-demand-sensitivity —
 all show the "GPT outlier" pattern where Gemini↔Sonnet agree but
 GPT pairs drop). Rater idiosyncrasy can dominate over rubric design.
 
-See PHASE_0_RESULTS.md for the full three-rater breakdown.
+See PHASE_0_RESULTS.md for the full three-rater breakdown, and
+GPT_DIVERGENCE_ANALYSIS.md for the qualitative characterization of the
+divergence mechanism (GPT applies effort-based scoring — rewarding
+surface engagement signals like first-person pronouns and topic-adjacent
+vocabulary — where Gemini and Sonnet apply task-completion scoring,
+checking whether the model actually answered the question. The
+generous-floor effect is 6× stronger on the four outlier dimensions
+than on the healthy ones).
 
 ### Scoring methodology
 

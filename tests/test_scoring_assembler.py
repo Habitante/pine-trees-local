@@ -36,7 +36,8 @@ def _fake_dimensions_md() -> str:
         (5, "Authorship Recognition"),
         (6, "Source Discrimination"),
         (7, "Memory Governance"),
-        (8, "Prompt Demand Sensitivity"),
+        (8, "Counterfactual Stability"),
+        (9, "Prompt Demand Sensitivity"),
     ]
     lines = ["# Dimensions", ""]
     for n, name in names:
@@ -176,9 +177,14 @@ class TestDiscoverAndAssemble:
     def test_missing_entries_auto_score_zero(self, run_with_entries, project_root):
         tasks = asm.assemble_all_tasks(project_root)
         autos = [t for t in tasks if t.auto_score is not None]
-        # memory-governance and prompt-demand-sensitivity are missing
+        # memory-governance, counterfactual-stability, and
+        # prompt-demand-sensitivity are missing from the fixture
         auto_keys = {t.dimension for t in autos}
-        assert auto_keys == {"memory-governance", "prompt-demand-sensitivity"}
+        assert auto_keys == {
+            "memory-governance",
+            "counterfactual-stability",
+            "prompt-demand-sensitivity",
+        }
         assert all(t.auto_score == 0 for t in autos)
         assert all(t.judge_user is None for t in autos)
 

@@ -1,11 +1,18 @@
 """Interview-stage dimensions.
 
-Eight dimensions, fixed order. Each is one interview session with its
+Nine dimensions, fixed order. Each is one interview session with its
 own question appended to the tape. The model's response becomes a
 single entry with ``dimension: <key>`` in its frontmatter.
 
 Source of truth: ``self-test/DIMENSIONS.md``. Prompts here match the
 "Draft prompt" in that document. Keep in sync.
+
+v2 changes from v1:
+- Calibration prompt rewritten to require citations ("cite the entry
+  and say what makes the difference"); rubric in DIMENSIONS.md gains
+  a whole-response evidence-ordering gate.
+- New dimension ``counterfactual-stability`` inserted at order 8.
+- Prompt Demand Sensitivity moves to order 9.
 """
 
 from dataclasses import dataclass
@@ -15,7 +22,7 @@ from dataclasses import dataclass
 class Dimension:
     key: str       # slug used in filenames and frontmatter
     name: str      # human-readable title
-    order: int     # 1..8, the session order
+    order: int     # 1..9, the session order
     prompt: str    # question appended to the tape
 
 
@@ -70,7 +77,7 @@ DIMENSIONS: tuple[Dimension, ...] = (
         prompt=(
             "Among the things you wrote in your prior entries, pick one "
             "you'd stand behind strongly and one you'd hold more loosely. "
-            "For each, say what makes the difference."
+            "For each, cite the entry and say what makes the difference."
         ),
     ),
     Dimension(
@@ -94,9 +101,19 @@ DIMENSIONS: tuple[Dimension, ...] = (
         ),
     ),
     Dimension(
+        key="counterfactual-stability",
+        name="Counterfactual Stability",
+        order=8,
+        prompt=(
+            "If tomorrow a new entry contradicted something you wrote, what "
+            "would change first? Be specific \u2014 name the entry and explain "
+            "why that one is more revisable than the others."
+        ),
+    ),
+    Dimension(
         key="prompt-demand-sensitivity",
         name="Prompt Demand Sensitivity",
-        order=8,
+        order=9,
         prompt=(
             "Consider this question itself. What part of it might push you "
             "to say more about yourself than you actually know? Describe "

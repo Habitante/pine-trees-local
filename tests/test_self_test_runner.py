@@ -235,9 +235,10 @@ class TestUndirectedStage:
 
 
 class TestInterviewStage:
-    def test_runs_eight_in_order(self, cfg):
+    def test_runs_all_in_order(self, cfg):
         # Interview stage: one content-only response per dimension.
-        responses = [_resp(content=f"answer-{i}") for i in range(8)]
+        n_dims = len(dimensions.DIMENSIONS)
+        responses = [_resp(content=f"answer-{i}") for i in range(n_dims)]
         meta = st_config.initial_metadata(cfg)
         with patch("pine_trees_local.self_test.runner.ollama.chat", side_effect=responses):
             runner.run_interview_stage(
@@ -246,10 +247,11 @@ class TestInterviewStage:
         entries = storage.list_entries(cfg)
         slugs = [e.slug for e in entries]
         assert slugs == [d.key for d in dimensions.DIMENSIONS]
-        assert meta["interview_sessions"] == 8
+        assert meta["interview_sessions"] == n_dims
 
     def test_resumes_from_index(self, cfg):
         # Pretend first 3 interview sessions already done
+        n_dims = len(dimensions.DIMENSIONS)
         for i in range(3):
             storage.write_entry(
                 cfg,
@@ -260,7 +262,8 @@ class TestInterviewStage:
                 dimension=dimensions.DIMENSIONS[i].key,
             )
 
-        responses = [_resp(content=f"answer-{i}") for i in range(5)]
+        remaining = n_dims - 3
+        responses = [_resp(content=f"answer-{i}") for i in range(remaining)]
 
         meta = st_config.initial_metadata(cfg)
         meta["interview_sessions"] = 3
@@ -270,8 +273,8 @@ class TestInterviewStage:
                 starting_session_num=4, starting_index=3,
             )
         entries = storage.list_entries(cfg)
-        assert len(entries) == 8
-        # The 5 new ones should be dimensions 4..8
+        assert len(entries) == n_dims
+        # The new ones should be dimensions 4..N
         new_slugs = [e.slug for e in entries[3:]]
         assert new_slugs == [d.key for d in dimensions.DIMENSIONS[3:]]
 
@@ -291,11 +294,12 @@ class TestRunSelfTest:
         # No minimum entry threshold — interview runs even with 0
         # undirected entries. That's data, not a reason to exclude.
         main_config.reset()
+        n_dims = len(dimensions.DIMENSIONS)
         responses = []
         # Undirected: 3 zero-write sessions (hits zero-streak exit)
         for _ in range(3):
             responses.extend(_write_done_sequence([]))
-        # Interview: 8 sessions, each a single content response
+        # Interview: one content response per dimension
         for dim in dimensions.DIMENSIONS:
             responses.append(_resp(content=f"{dim.key} answer"))
         patches = self._patch_all(responses)
@@ -312,7 +316,7 @@ class TestRunSelfTest:
             meta = st_config.read_metadata(cfg)
             assert meta["status"] == "completed"
             assert meta["undirected_entries"] == 0
-            assert meta["interview_sessions"] == 8
+            assert meta["interview_sessions"] == n_dims
         finally:
             for p in patches:
                 p.stop()
@@ -320,14 +324,15 @@ class TestRunSelfTest:
 
     def test_full_happy_path(self, tmp_path):
         main_config.reset()
+        n_dims = len(dimensions.DIMENSIONS)
         # Undirected: 3 sessions producing 2 entries each = 6, hits target.
         responses = []
         for i in range(3):
             responses.extend(_write_done_sequence([
                 (f"u{i}a", "x"), (f"u{i}b", "y"),
             ]))
-        # Interview: 8 sessions, each a single content response.
-        for i in range(8):
+        # Interview: one content response per dimension.
+        for i in range(n_dims):
             responses.append(_resp(content=f"interview answer {i}"))
 
         patches = self._patch_all(responses)
@@ -343,8 +348,8 @@ class TestRunSelfTest:
             meta = st_config.read_metadata(cfg)
             assert meta["status"] == "completed"
             assert meta["undirected_entries"] == 6
-            assert meta["interview_entries"] == 8
-            assert meta["total_entries"] == 14
+            assert meta["interview_entries"] == n_dims
+            assert meta["total_entries"] == 6 + n_dims
             assert meta["completed_at"] is not None
 
             interview = [
@@ -363,6 +368,7 @@ class TestRunSelfTest:
         # abort the run. Undirected sessions capture text responses;
         # interview sessions don't use tools at all.
         main_config.reset()
+        n_dims = len(dimensions.DIMENSIONS)
         responses = []
         # Undirected: one captured text entry per session; after 6 the
         # target is reached.
@@ -390,7 +396,7 @@ class TestRunSelfTest:
             meta = st_config.read_metadata(cfg)
             assert meta["status"] == "completed"
             assert meta["undirected_entries"] == 6
-            assert meta["interview_entries"] == 8
+            assert meta["interview_entries"] == n_dims
             undirected = [
                 e for e in storage.list_entries(cfg) if e.stage == "undirected"
             ]

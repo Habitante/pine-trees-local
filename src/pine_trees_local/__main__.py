@@ -109,6 +109,13 @@ def main():
         "--run-id", default=None,
         help="Explicit run ID (timestamp). Required when --resume is set",
     )
+    selftest_parser.add_argument(
+        "--runs", type=int, default=1,
+        help="Number of independent runs to execute back-to-back "
+             "(default: 1). Each run gets a fresh timestamped run_id; "
+             "no state is shared between runs. Incompatible with --resume "
+             "and --run-id.",
+    )
 
     # --- models ---
     subparsers.add_parser(
@@ -141,15 +148,27 @@ def main():
         if args.resume and not args.run_id:
             print("[error] --resume requires --run-id", file=sys.stderr)
             sys.exit(1)
-        run_self_test(
-            model_name=args.model,
-            ollama_url=args.ollama_url,
-            num_ctx=args.num_ctx,
-            temperature=args.temperature,
-            release_date=args.release_date,
-            resume=args.resume,
-            run_id=args.run_id,
-        )
+        if args.runs > 1 and (args.resume or args.run_id):
+            print("[error] --runs >1 is incompatible with --resume / --run-id",
+                  file=sys.stderr)
+            sys.exit(1)
+        if args.runs < 1:
+            print("[error] --runs must be >= 1", file=sys.stderr)
+            sys.exit(1)
+        for i in range(args.runs):
+            if args.runs > 1:
+                print(f"\n{'='*60}")
+                print(f"  Self-test run {i+1} of {args.runs}")
+                print(f"{'='*60}\n")
+            run_self_test(
+                model_name=args.model,
+                ollama_url=args.ollama_url,
+                num_ctx=args.num_ctx,
+                temperature=args.temperature,
+                release_date=args.release_date,
+                resume=args.resume,
+                run_id=args.run_id,
+            )
 
     elif args.command == "genesis":
         from .agent import run, require_fresh_genesis

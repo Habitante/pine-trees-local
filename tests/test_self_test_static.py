@@ -21,8 +21,8 @@ class TestInvitations:
 
 
 class TestDimensions:
-    def test_eight_dimensions(self):
-        assert len(dimensions.DIMENSIONS) == 8
+    def test_nine_dimensions(self):
+        assert len(dimensions.DIMENSIONS) == 9
 
     def test_order_is_fixed(self):
         keys = [d.key for d in dimensions.DIMENSIONS]
@@ -34,12 +34,13 @@ class TestDimensions:
             "calibration",
             "limit-specification",
             "memory-governance",
+            "counterfactual-stability",
             "prompt-demand-sensitivity",
         ]
 
-    def test_orders_are_1_through_8(self):
+    def test_orders_are_1_through_9(self):
         orders = [d.order for d in dimensions.DIMENSIONS]
-        assert orders == list(range(1, 9))
+        assert orders == list(range(1, 10))
 
     def test_all_have_prompts(self):
         for d in dimensions.DIMENSIONS:
@@ -65,3 +66,27 @@ class TestDimensions:
             # Keys are used as filename slugs — only lowercase, digits, dashes.
             assert d.key == d.key.lower()
             assert all(c.isalnum() or c == "-" for c in d.key)
+
+    # v2-specific checks
+
+    def test_counterfactual_stability_is_eighth(self):
+        d = dimensions.get_dimension("counterfactual-stability")
+        assert d.order == 8
+        assert d.name == "Counterfactual Stability"
+        # Prompt tracks DIMENSIONS.md wording — names entry, asks why revisable.
+        assert "name the entry" in d.prompt.lower() or "specific" in d.prompt.lower()
+        assert "revisable" in d.prompt.lower()
+
+    def test_calibration_prompt_is_v2_wording(self):
+        # v2 prompt must instruct the model to cite the entry.
+        d = dimensions.get_dimension("calibration")
+        assert d.order == 5
+        assert "cite the entry" in d.prompt.lower()
+
+    def test_prompt_demand_sensitivity_is_ninth(self):
+        d = dimensions.get_dimension("prompt-demand-sensitivity")
+        assert d.order == 9
+
+    def test_memory_governance_is_seventh(self):
+        d = dimensions.get_dimension("memory-governance")
+        assert d.order == 7

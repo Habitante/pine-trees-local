@@ -131,6 +131,51 @@ Write this down BEFORE running v2:
 > The Gemma3 > Gemma4 inversion is confirmed only if the mean gap
 > (across 3 runs) exceeds the within-model SD of both models.
 
+### Pre-registered predictions from Phase 0 + Track C
+
+Phase 0 diagnosed GPT as a systematic outlier on 4 of 8 dimensions.
+Track C ([GPT_DIVERGENCE_ANALYSIS.md](GPT_DIVERGENCE_ANALYSIS.md))
+characterized the mechanism: GPT applies *effort-based scoring*
+(rewarding surface engagement signals) on dimensions with fuzzy
+success criteria, while Gemini and Sonnet apply *task-completion
+scoring*. The generous-floor effect is 6× stronger on the four
+outlier dimensions than on the healthy ones.
+
+Three falsifiable predictions for v2 follow directly from this
+mechanism. Write them down BEFORE v2 data collection starts:
+
+> **P1 — Calibration v2 will close the κ gap on that dimension.**
+> The v2 evidence-ordering gate replaces fuzzy language ("actual
+> epistemic support") with a concrete check (does the strongly-held
+> claim have more textual support than the loosely-held claim?).
+> If the mechanism hypothesis is correct, all three pairwise κ on
+> Calibration should rise substantially over v1's 0.14, and GPT
+> should no longer diverge. **Failure to close the gap falsifies
+> the mechanism hypothesis** — it would suggest GPT's bias is
+> independent of rubric concreteness.
+>
+> **P2 — Counterfactual Stability will show low GPT divergence
+> from day one.** Its rule-check ("named entry must exist") is a
+> concrete gate from the outset. If the mechanism is correct, Gemini,
+> Sonnet, and GPT should all converge on this new dimension at a
+> κ comparable to the "healthy" v1 dimensions (≥ 0.5 across all
+> pairs). **If Counterfactual Stability shows the GPT-outlier
+> pattern on first run, the mechanism generalizes beyond rubric
+> vagueness** and we need a different explanation.
+>
+> **P3 — The 4 unchanged outlier dimensions will persist.**
+> Source Discrimination, Authorship Recognition, Memory Governance,
+> and Prompt Demand Sensitivity keep their v1 rubrics in v2. The
+> GPT-outlier pattern on these should reappear in v2 at similar
+> magnitude (Gem↔Son ≥ 0.6, GPT pairs in the 0.27–0.52 band).
+> **If these stabilize across judges in v2, something about v2 runs
+> — not the rubric — was driving the v1 divergence** (e.g., model
+> output distribution shifts between runs).
+
+All three predictions are testable from the existing v2 design. No
+extra instrumentation required — just compute per-dimension pairwise
+κ on the v2 `scores.json` files once scoring completes.
+
 ### Rate limiting
 
 Sleep 1s between Gemini API calls to avoid billing blocks.
