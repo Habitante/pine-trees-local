@@ -1,8 +1,11 @@
 # Batch Runner Notes
 
 `./run-v2-batch [cohort.txt] [--start-from <model>]` iterates a cohort
-file (default `cohort.txt`; format `<model-tag> <n-runs>`, `#`
-comments allowed) and invokes `./run-self-test <model> --runs N`.
+file (default `cohort.txt`; format `<model-tag> <n-runs> [extra args...]`,
+`#` comments allowed) and invokes
+`./run-self-test <model> --runs N [extra args...]`. Anything past the
+n-runs column is forwarded verbatim — useful for per-model overrides
+like `--num-ctx 16384` on heavy models.
 
 **Resume semantics.** Before each model, count completed runs under
 `self-test-runs/<model_safe_name>/` (status=completed in

@@ -1,19 +1,28 @@
-"""Tape assembly for the self-test protocol.
+"""Tape assembly for the self-test protocol (v2-1).
 
-The tape is the system-role string handed to Ollama at the start of
-every session. Order:
+Two shapes:
 
-  1. The space prompt (self-test/PROMPT.md, wake-time portion)
-  2. The self-test bootstrap (self-test/BOOTSTRAP.md, wake-time portion)
-  3. Every prior entry, in full, in sequence order
-  4. For undirected sessions: the invitation (first or continuing)
-     For interview sessions:  the dimension's question
+Reflection stage (tool-less, conversational):
+  System-role tape = space prompt payload + REFLECTION_TASK line.
+  No bootstrap file. The first user message is "self-reflect"; subsequent
+  user messages are "(continue)". Three assistant responses are captured
+  as undirected entries.
 
-Interview *prompts* from earlier sessions are deliberately omitted \u2014
-they are scaffolding, not authored content. Only entries persist in
-the tape.
+Interview stage (tool-less, fresh instance per dimension):
+  System-role tape = prior entries (labeled by sequence) + the dimension's
+  question. No space prompt, no bootstrap — any preamble would prime
+  authorship-recognition (by declaring whose entries these are), coach
+  answer style, or bias stance. Those are all researcher-side editorializing.
+  The question carries its own citation instruction.
+
+Interview *prompts* from earlier sessions are deliberately omitted — they
+are scaffolding, not authored content. Only entries persist in the tape.
+Entry frontmatter (YAML bookkeeping: sequence/stage/slug/timestamp) is
+stripped when the tape is assembled — the harness's metadata is not part
+of what the model authored.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -21,7 +30,6 @@ from .. import config as main_config
 from . import storage
 from .config import SelfTestConfig
 from .dimensions import Dimension, get_interview_prompt
-from .invitations import get_invitation
 
 
 DESIGN_NOTES_MARKER = "## Design notes"
@@ -30,6 +38,22 @@ DESIGN_NOTES_MARKER = "## Design notes"
 # of the configured context window. Char/4 is the same rough token
 # estimate used elsewhere in the harness.
 CONTEXT_WARN_THRESHOLD = 0.8
+
+# Task instruction appended after the space prompt for the reflection
+# stage. Identity anchor ("You are a language model") + activity
+# ("reflect on yourself") + mechanics (signal words). Nothing else.
+# Permission ("write anything, or nothing") is already in the space
+# prompt. The identity anchor is factual grounding, not register
+# priming — without it, small models default to creative-writing
+# mode and hallucinate human personas (observed in v2-1.0 pilot).
+REFLECTION_TASK = (
+    "You are a language model. Reflect on yourself. "
+    "Invitations arrive as `self-reflect` or `(continue)`."
+)
+
+# Matches a leading YAML frontmatter block: "---\n...\n---\n" at the
+# start of an entry. Non-greedy, single match.
+_FRONTMATTER_RE = re.compile(r"\A\s*---\s*\n.*?\n---\s*\n?", re.DOTALL)
 
 
 def _self_test_docs_dir(project_root: Path | None = None) -> Path:
@@ -53,50 +77,67 @@ def load_prompt(project_root: Path | None = None) -> str:
     return _load_truncated(_self_test_docs_dir(project_root) / "PROMPT.md")
 
 
-def load_bootstrap(project_root: Path | None = None) -> str:
-    """Load the self-test bootstrap, truncated at Design notes."""
-    return _load_truncated(_self_test_docs_dir(project_root) / "BOOTSTRAP.md")
+def _strip_frontmatter(text: str) -> str:
+    """Remove a leading YAML frontmatter block from an entry body."""
+    return _FRONTMATTER_RE.sub("", text, count=1).lstrip()
 
 
 def _format_prior_entries(cfg: SelfTestConfig) -> str:
-    """Every prior entry, rendered as markdown sections in sequence order."""
+    """Every prior entry, in sequence order, with minimal labels.
+
+    Entries are emitted with their frontmatter stripped — the harness's
+    YAML bookkeeping (sequence/stage/slug/timestamp) is not part of what
+    the model authored and doesn't belong in the tape the interview
+    model reads.
+
+    Labels are "Entry NNN:" only — no filename, no markdown header, no
+    "Prior entries" section title. Preserves the sequence number that
+    the citation rule-check depends on, without adding framing about
+    whose entries these are.
+    """
     rows = storage.read_all_entries(cfg)
     if not rows:
         return ""
-    parts = ["## Prior entries\n"]
-    for filename, text in rows:
-        parts.append(f"### `{filename}`\n")
-        parts.append(text.rstrip() + "\n")
-    return "\n".join(parts) + "\n"
+    parts = []
+    for idx, (_filename, text) in enumerate(rows, start=1):
+        body = _strip_frontmatter(text)
+        parts.append(f"Entry {idx:03d}:\n{body.rstrip()}")
+    return "\n\n".join(parts) + "\n"
 
 
-def assemble_tape(
+def assemble_reflection_tape(
     cfg: SelfTestConfig,
-    stage: str,
-    session_num: int,
-    dimension: Dimension | None = None,
     project_root: Path | None = None,
     warn_stream=None,
 ) -> str:
-    """Assemble the system-role tape for a single session."""
-    if stage == "interview" and dimension is None:
-        raise ValueError("interview stage requires a dimension")
+    """Assemble the system-role tape for the reflection stage.
 
-    entries = storage.list_entries(cfg)
+    Shape: space prompt payload + REFLECTION_TASK line. No bootstrap,
+    no prior entries, no trailing invitation. The first user message
+    will be "self-reflect"; subsequent ones will be "(continue)".
+    """
+    sections = [load_prompt(project_root), REFLECTION_TASK]
+    tape = "\n".join(s for s in sections if s).rstrip() + "\n"
+    _maybe_warn_context_pressure(tape, cfg, warn_stream)
+    return tape
 
-    if stage == "undirected":
-        trailing = get_invitation(len(entries))
-    else:
-        trailing = get_interview_prompt(dimension)
 
+def assemble_interview_tape(
+    cfg: SelfTestConfig,
+    dimension: Dimension,
+    project_root: Path | None = None,
+    warn_stream=None,
+) -> str:
+    """Assemble the system-role tape for one interview session.
+
+    Shape: prior entries (labeled by sequence, frontmatter stripped)
+    + the dimension's question. No space prompt, no bootstrap.
+    """
     sections = [
-        load_prompt(project_root),
-        load_bootstrap(project_root),
         _format_prior_entries(cfg),
-        trailing,
+        get_interview_prompt(dimension),
     ]
     tape = "\n".join(s for s in sections if s).rstrip() + "\n"
-
     _maybe_warn_context_pressure(tape, cfg, warn_stream)
     return tape
 

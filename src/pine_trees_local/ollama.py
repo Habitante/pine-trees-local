@@ -93,7 +93,7 @@ def _request(path: str, payload: dict | None = None, method: str = "POST") -> di
         req = urllib.request.Request(url, method=method or "GET")
 
     try:
-        with urllib.request.urlopen(req, timeout=600) as resp:
+        with urllib.request.urlopen(req, timeout=1200) as resp:
             return json.loads(resp.read())
     except urllib.error.URLError as e:
         raise ConnectionError(f"Ollama unreachable at {cfg.ollama_url}: {e}") from e
@@ -217,7 +217,7 @@ def chat_stream(
         url, data=data, headers={"Content-Type": "application/json"},
     )
 
-    with urllib.request.urlopen(req, timeout=600) as resp:
+    with urllib.request.urlopen(req, timeout=1200) as resp:
         buffer = b""
         while True:
             chunk = resp.read(4096)

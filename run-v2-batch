@@ -130,8 +130,11 @@ while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
     line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" ]] && continue
 
-    # split on whitespace
-    read -r model n_runs _rest <<< "$line"
+    # split on whitespace: <model> <n_runs> [extra args to run-self-test...]
+    read -r -a parts <<< "$line"
+    model="${parts[0]:-}"
+    n_runs="${parts[1]:-}"
+    extra_args=("${parts[@]:2}")
     if [[ -z "${model:-}" ]] || [[ -z "${n_runs:-}" ]]; then
         log "[batch] skipping malformed line: '$raw_line'"
         continue
@@ -167,7 +170,7 @@ while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
     log "[batch] $model: have $completed, need $remaining more (target $n_runs)"
 
     # Invoke run-self-test; stream output, capture exit code, keep going on error.
-    "$PROJECT_ROOT/run-self-test" "$model" --runs "$remaining" 2>&1 | tee -a "$BATCH_LOG"
+    "$PROJECT_ROOT/run-self-test" "$model" --runs "$remaining" "${extra_args[@]}" 2>&1 | tee -a "$BATCH_LOG"
     exit_code="${PIPESTATUS[0]}"
 
     if [[ "$exit_code" -eq 0 ]]; then

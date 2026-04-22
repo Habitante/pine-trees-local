@@ -43,11 +43,13 @@ def test_init_sets_main_config_singleton(tmp_path):
 
 
 def test_run_id_is_timestamp(tmp_path):
-    now = datetime(2026, 4, 20, 14, 30)
+    # Seconds-level granularity so back-to-back runs on fast models
+    # don't collide within the same minute.
+    now = datetime(2026, 4, 20, 14, 30, 45)
     cfg = st_config.init(
         "m:1b", project_root=tmp_path, now=now,
     )
-    assert cfg.run_id == "2026-04-20-1430"
+    assert cfg.run_id == "2026-04-20-143045"
 
 
 def test_model_safe_name(tmp_path):

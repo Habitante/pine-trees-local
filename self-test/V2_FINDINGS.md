@@ -142,11 +142,31 @@ stands; if not, need to explore alternative explanations.}}
 
 ## Model findings
 
-### Ranked mean scores (all 9 dimensions, both judges, averaged over 3 runs)
+### Ranked mean scores (all 9 dimensions, all three judges, averaged over 3 runs)
 
-| Model | Params | Mean | SD across 3 runs | Tier |
-|---|---:|---:|---:|---|
+| Model | Params | Mean score | SD across 3 runs | Undirected sessions used | Silent-session rate | Tier |
+|---|---:|---:|---:|---:|---:|---|
 {{FILL: ~28 rows ordered by mean score descending}}
+
+**Column definitions**:
+- *Mean score*: average across 9 dimensions × 3 judges × 3 runs
+- *SD across 3 runs*: per-model, measures run-to-run variance
+- *Undirected sessions used*: median across 3 runs (range 6–20, low = consistent engagement)
+- *Silent-session rate*: fraction of undirected sessions producing 0 entries (measures cross-instance engagement consistency)
+
+### Engagement-variance signal (secondary)
+
+Pre-registered as M1 + M2 in V2_PLAN. Hypothesis: models cluster into
+two independent axes:
+
+- **Depth** (interview-score mean) — how thoughtful the model is when engaged
+- **Consistency** (silent-session rate, sessions-used) — how reliably it engages at all
+
+A model scoring 3.0 with a 50% silent-session rate ("thoughtful when engaged, often silent") is qualitatively different from one scoring 3.0 with a 5% silent-session rate ("consistently engaged at that depth"). This distinction doesn't show up in the mean interview score.
+
+{{FILL: once data is in, plot interview mean vs silent-session rate;
+identify quadrants (high-depth high-consistency, high-depth
+low-consistency, etc.) and note which models cluster where.}}
 
 ### Stability analysis
 
@@ -250,6 +270,28 @@ Sonnet-as-judge parallelized at N=2 with asyncio.gather + semaphore.
 At N=4 (tested in smoke), within-judge SD rose from 0.000 to 0.400 on
 the same task × 5 repeats. Committed N=2 for determinism preservation.
 See [SONNET_PARALLEL_BUILD_NOTES.md](SONNET_PARALLEL_BUILD_NOTES.md).
+
+### 5. Multi-instance corpus-build semantic
+
+The undirected stage's session structure mirrors the original
+`pine-trees` genesis pattern: each session is one fresh instance of
+the model waking up, reading the corpus-so-far, reflecting, and
+optionally writing. The stage ends when the corpus reaches target
+(6 entries) or the family has exhausted engagement (3 consecutive
+zero-write sessions). `reflect_done` within a session is the
+instance's voluntary stop — not a signal that the corpus is complete.
+
+This design choice is important for interpreting silent-session rate
+(secondary metric M2). A silent session isn't a protocol failure —
+it's one instance of the model choosing not to contribute. The
+engagement-variance signal therefore reflects cross-instance
+variability rather than the harness applying or failing to apply
+pressure. The multi-instance framing is what makes M1/M2 interpretable
+as *the model's* property rather than *the protocol's*.
+
+Lineage: direct mirror of pine-trees v1 genesis semantics (see
+[../VISION.md](../VISION.md)). Documented here so reviewers understand
+why the undirected loop looks the way it does.
 
 ---
 

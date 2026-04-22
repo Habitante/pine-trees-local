@@ -1,0 +1,17 @@
+# v2-1 protocol pilot — 4 models, 1 run each.
+# Purpose: validate the stripped protocol (space prompt + minimal
+# task line; no interview bootstrap; frontmatter stripped from tape).
+# Eyeball check, not judge-scored. If outputs look healthy, commit
+# to a full cohort re-run with cohort.txt.
+#
+# Run via: ./run-v2-batch cohort-pilot-v2-1.txt
+
+gemma3:1b 1
+gemma3:4b 1
+qwen3.5:2b 1
+qwen2.5:3b 1
+gemma4:26b 1
+
+# Thinking-mode confound check (see THINKING_MODE_FINDING.md)
+deepseek-r1:1.5b 1
+deepseek-r1:7b 1

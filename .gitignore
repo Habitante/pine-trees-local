@@ -3,8 +3,7 @@ models/
 model.txt
 
 # Self-test runs (research output, not committed)
-self-test-runs/
-self-test-v1-runs/
+self-test-*/
 
 # Python
 __pycache__/

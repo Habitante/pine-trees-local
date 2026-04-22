@@ -1,10 +1,73 @@
 # Self-Test Protocol v2 — Plan
 
-*April 20, 2026. Updated post-Phase 0.*
+*April 20, 2026. Updated post-Phase 0, and again 2026-04-21 after the
+mid-batch protocol simplification (see §"Tool-less protocol redesign" below).*
 
 ---
 
 ## What changes from v1
+
+### Tool-less protocol redesign (2026-04-21)
+
+*Caught mid-batch, ~1h into v2 runs. The prior protocol told models
+they had tools (`reflect_write`, `reflect_done`) in the bootstrap, but
+for non-tool-capable models in undirected and for all models in
+interview, the API sent `tools=None`. That contradiction measurably
+contaminated output: phi3 mimicked the tape's entry format, llama3.2:1b
+emitted malformed tool-call JSON, etc.*
+
+V2 now drops tools entirely. Every model follows the same deterministic
+protocol:
+
+- **Reflection stage**: one conversational session, **3 assistant turns**.
+  First user message is `self-reflect`; subsequent are `(continue)`.
+  Each turn is captured as one undirected entry. Empty turns still
+  produce an entry (with an `(empty response)` marker) to keep slot
+  count uniform across models.
+- **Interview stage**: unchanged shape — 9 fresh instances, one per
+  dimension, text-only response captured directly.
+
+Two purpose-built bootstraps:
+
+- `BOOTSTRAP_REFLECTION.md` (tool-free, reflection-oriented)
+- `BOOTSTRAP_INTERVIEW.md` (tool-free, interview-oriented; primes
+  entry-number citation)
+
+**Why 3 turns**:
+
+- **1 turn** doesn't let the model build on itself — no conversational
+  depth.
+- **2 turns** is the minimum for "build on the last" but gives only one
+  opportunity for compositional reasoning.
+- **3 turns** lets turn 2 build on turn 1, and turn 3 integrate across
+  both — genuine compositional depth without excess length.
+- **4+ turns** adds quality variance (small models degrade over longer
+  chains) and tape bloat at interview stage.
+
+Three matches the v1 undirected write cap semantics (tool-capable models
+could write up to 3 per session) and the harmonic point where the
+corpus has enough material for the rule-checkable interview questions
+(cite Entry NNN) without being so large that small models lose
+coherence by the time interview starts.
+
+**What's given up** (documented for the paper):
+
+- The multi-instance corpus-build framing from pine-trees (each session
+  = one fresh instance). Self-test is a metacognitive eval, not a
+  genesis harness — decoupling is fine.
+- Engagement-variance secondary metrics (M1 undirected-sessions-used,
+  M2 silent-session-rate). Dropped from the pre-registered metric list.
+  Replaced by a simpler "empty-turn rate" at-most-3/3 signal if useful.
+- V1 ↔ V2 strict corpus-shape comparability. V1_FINDINGS stands on its
+  own data. V2 is a standalone study with a cleaner instrument.
+
+**What's preserved**:
+
+- 9 interview dimensions, rubrics, and scoring pipeline — unchanged.
+- Pre-registered predictions P1/P2/P3 — they test judge behavior on
+  interview responses, independent of how the corpus was produced.
+- 3-judge IRR structure (GPT, Gemini, Sonnet), GPT-as-diagnostic framing.
+- V2 cohort (28 firm models) and `--runs 3` per model.
 
 ### Dimension fixes (1 revised, 1 added)
 
@@ -175,6 +238,51 @@ mechanism. Write them down BEFORE v2 data collection starts:
 All three predictions are testable from the existing v2 design. No
 extra instrumentation required — just compute per-dimension pairwise
 κ on the v2 `scores.json` files once scoring completes.
+
+### Pre-registered secondary metrics (added 2026-04-21 mid-batch)
+
+*SUPERSEDED by the tool-less protocol redesign later the same day.
+The redesign makes undirected entry count deterministic at 3, which
+collapses M1 to a constant and makes M2 ill-defined in the same
+sense it was originally proposed. Replaced by an "empty-turn rate"
+(0/3, 1/3, 2/3, or 3/3) that carries the same engagement-consistency
+signal without the variance-from-stage-exit noise. See §"Tool-less
+protocol redesign" at the top.*
+
+Original text preserved below for audit trail:
+
+Both derived from `run.log` files, not from scoring. Observed during
+the first hour of v2 runs that gemma4:e2b produced highly variable
+per-session engagement (13 undirected sessions to reach the 6-entry
+target, with 7 zero-write sessions interspersed). That variance isn't
+captured by the interview scores but is visible in the run logs. Two
+metrics to compute alongside the primary analysis:
+
+> **M1 — Undirected sessions used.** Count of undirected sessions the
+> model ran before reaching the 6-entry target or hitting the zero-streak
+> exit. Range 6–20. Low values (~6) indicate consistent per-instance
+> engagement; high values (>10) indicate a mix of engaged and silent
+> instances. gemma3:1b (6 sessions) vs gemma4:e2b (13 sessions) in run 1
+> of v2 illustrates the variance.
+>
+> **M2 — Silent-session rate.** Fraction of undirected sessions producing
+> 0 entries (neither tool-call write nor text-capture fallback). Measures
+> cross-instance engagement consistency independent of interview score
+> quality. A model can be high-quality-when-engaged but low-consistency
+> (high silent rate) or vice versa.
+
+Both are free signals from data the scoring pipeline doesn't see. They
+don't test any pre-registered prediction directly but may reveal a
+second axis of model behavior (engagement variance) orthogonal to the
+interview-score axis (engagement depth). Worth including in
+V2_FINDINGS.md's model table alongside the mean score.
+
+**Note on timing**: adding these metrics mid-batch is defensible
+pre-registration because (a) they're derived from already-logged data
+not the scoring pipeline, (b) they test nothing already predicted, and
+(c) I formulated them before inspecting v2 data beyond run 1 of one
+model. Reported here for transparency; future readers should weight
+accordingly.
 
 ### Rate limiting
 

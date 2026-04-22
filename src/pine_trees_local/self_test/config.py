@@ -21,10 +21,15 @@ from .. import config as main_config
 
 PROTOCOL_VERSION = "1.0"
 
-DEFAULT_UNDIRECTED_MIN_ENTRIES = 4
-DEFAULT_UNDIRECTED_TARGET_ENTRIES = 6
-DEFAULT_UNDIRECTED_MAX_SESSIONS = 20
-DEFAULT_UNDIRECTED_ZERO_STREAK = 3
+# Number of assistant turns captured as undirected entries in the
+# reflection stage. One conversational session; turn 1 is driven by
+# the "self-reflect" user message, turns 2..N by "(continue)".
+DEFAULT_REFLECTION_TURNS = 3
+
+# Legacy constant retained for self_test/tools.py, which is no longer
+# imported by the runner (tool-less protocol) but still exists so its
+# unit tests continue to exercise the tool-call code path if the module
+# is ever revived. Not referenced by the active runtime.
 DEFAULT_MAX_WRITES_PER_SESSION = 3
 
 
@@ -36,10 +41,18 @@ def self_test_root(project_root: Path | None = None) -> Path:
 
 
 def _new_run_id(now: datetime | None = None) -> str:
-    """Generate a sortable, human-readable run ID from the current time."""
+    """Generate a sortable, human-readable run ID from the current time.
+
+    Seconds-level granularity — minute-level was too coarse for fast
+    models (1-3B completing in <30s), which produced clock collisions
+    when ``--runs N`` invoked back-to-back sessions within the same
+    minute. The first run's directory was silently overwritten by the
+    second via ``mkdir(exist_ok=True)``. Seconds-level granularity
+    keeps every run distinct even for the fastest cohort members.
+    """
     if now is None:
         now = datetime.now()
-    return now.strftime("%Y-%m-%d-%H%M")
+    return now.strftime("%Y-%m-%d-%H%M%S")
 
 
 @dataclass(frozen=True)

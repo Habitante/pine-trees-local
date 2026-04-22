@@ -1,13 +1,20 @@
 """Session runner for the self-test protocol.
 
-Orchestrates an entire run: undirected stage (loops until the exit
-condition is met) followed by the 8-session interview stage.
+Two tool-less stages:
 
-The per-session loop is intentionally simpler than the main harness's
-wake loop \u2014 there is no settle/window split and no user window. The
-model receives the tape as the system message, then ``self-reflect``
-as a single user message, and we let it call tools until it either
-calls ``reflect_done`` or the tool-call safety cap kicks in.
+  1. Reflection stage — one conversational session, ``DEFAULT_REFLECTION_TURNS``
+     assistant turns. First user message is ``self-reflect``; subsequent
+     messages are ``(continue)``. Each assistant response becomes one
+     undirected entry. No tool calls.
+
+  2. Interview stage — nine fresh instances, one per dimension, in
+     fixed order. Each receives the full tape (prompt + interview
+     bootstrap + all prior entries + the dimension's question). The
+     assistant's text response is captured verbatim. No tool calls.
+
+Every model follows the same deterministic protocol. No tool-capability
+branching. Non-tool-capable models and tool-capable models share the
+same code path.
 """
 
 import sys
@@ -17,24 +24,11 @@ from pathlib import Path
 
 from .. import config as main_config
 from .. import ollama
-from ..tools import execute_tool
 from . import config as st_config
 from . import storage
 from . import tape as tape_mod
-from .config import (
-    DEFAULT_UNDIRECTED_MAX_SESSIONS,
-    DEFAULT_UNDIRECTED_TARGET_ENTRIES,
-    DEFAULT_UNDIRECTED_ZERO_STREAK,
-    SelfTestConfig,
-)
+from .config import DEFAULT_REFLECTION_TURNS, SelfTestConfig
 from .dimensions import DIMENSIONS, Dimension
-from .tools import SelfTestSessionState, build_tools, get_tool_definitions
-
-
-# Tool-call rounds per session. Enough room for 3 writes + done + a
-# couple of no-op rounds. Higher than needed by design; the real stop
-# condition is reflect_done.
-MAX_TOOL_ROUNDS = 10
 
 
 # --- small helpers ---
@@ -70,31 +64,81 @@ def _log(cfg: SelfTestConfig, line: str) -> None:
         pass
 
 
-# --- session runner ---
+# --- Reflection stage ---
 
 
-def run_session(
+def _run_reflection_stage(
     cfg: SelfTestConfig,
-    stage: str,
-    session_num: int,
     model_info: ollama.ModelInfo,
-    dimension: Dimension | None = None,
+    turns: int = DEFAULT_REFLECTION_TURNS,
 ) -> int:
-    """Run one session. Returns the number of entries written.
+    """One conversational reflection session. Returns entries written.
 
-    Two paths:
-      - interview: single chat call, no tools. The response body *is*
-        the answer — save it directly under the dimension's key.
-      - undirected: tool-calling loop. If the model responds without
-        tool calls but emits content, capture that content as an entry
-        too, so small models that don't wrap output in tool calls still
-        contribute signal instead of being logged as a blank deviation.
+    Conversation structure:
+      system: assembled reflection tape
+      user: "self-reflect"
+      assistant: <turn 1 response>   (captured if non-empty)
+      user: "(continue)"
+      assistant: <turn 2 response>   (captured if non-empty)
+      ...
+
+    Empty assistant responses are logged as deviations but do not abort
+    the session — the next "(continue)" still fires. This matters for
+    small models that sometimes produce blank turns mid-conversation.
     """
-    if stage == "interview":
-        if dimension is None:
-            raise ValueError("interview session requires a dimension")
-        return _run_interview_session(cfg, session_num, model_info, dimension)
-    return _run_undirected_session(cfg, session_num, model_info)
+    tape = tape_mod.assemble_reflection_tape(cfg)
+    _log(cfg, f"reflection start (tape: {len(tape):,} chars, turns={turns})")
+
+    messages: list[dict] = [
+        {"role": "system", "content": tape},
+        {"role": "user", "content": "self-reflect"},
+    ]
+    # think=False across the self-test protocol: the test measures the
+    # model's direct output channel ("what it says about itself"), not
+    # its meta-reasoning about the prompt. Thinking-capable Qwen 3.x
+    # models under the v2-1 space+task prompt burn their entire token
+    # budget on prompt-deliberation and emit empty content. Disabling
+    # thinking surfaces the reflective output. See
+    # self-test/THINKING_MODE_FINDING.md.
+    writes = 0
+
+    for turn in range(1, turns + 1):
+        response = ollama.chat(messages, tools=None, think=False)
+        body = (response.content or "").strip()
+
+        # Always write an entry — even for empty responses — so every
+        # model produces the same number of undirected entries. An empty
+        # turn is itself a signal ("this instance had nothing to say"),
+        # and keeping slot count uniform simplifies cross-model comparison
+        # at scoring time.
+        if body:
+            content_to_write = body
+            _log(cfg, f"reflection turn {turn}: wrote response ({len(body):,} chars)")
+            writes += 1
+        else:
+            content_to_write = "(empty response)"
+            _log(cfg, f"reflection turn {turn}: empty response — writing marker entry")
+
+        storage.write_entry(
+            cfg,
+            slug=f"reflection-{turn}",
+            content=content_to_write,
+            stage="undirected",
+            session_num=turn,
+            dimension=None,
+        )
+
+        # Preserve the conversational thread even when a turn was empty;
+        # the model may have more to say on the next (continue).
+        messages.append({"role": "assistant", "content": body})
+        if turn < turns:
+            messages.append({"role": "user", "content": "(continue)"})
+
+    _log(cfg, f"reflection end: {writes}/{turns} turns produced non-empty content")
+    return writes
+
+
+# --- Interview stage ---
 
 
 def _run_interview_session(
@@ -104,9 +148,7 @@ def _run_interview_session(
     dimension: Dimension,
 ) -> int:
     """One free-text interview turn. No tools, no loop."""
-    tape = tape_mod.assemble_tape(
-        cfg, stage="interview", session_num=session_num, dimension=dimension,
-    )
+    tape = tape_mod.assemble_interview_tape(cfg, dimension=dimension)
     label = f"interview#{session_num}[{dimension.key}]"
     _log(cfg, f"session start {label} (tape: {len(tape):,} chars)")
 
@@ -118,12 +160,12 @@ def _run_interview_session(
     response = ollama.chat(
         messages,
         tools=None,
-        think=True if model_info.has_thinking else None,
+        think=False,  # see reflection stage note re: thinking-mode confound
     )
 
     body = (response.content or "").strip()
     if not body:
-        _log(cfg, f"deviation {label}: empty response \u2014 no entry written")
+        _log(cfg, f"deviation {label}: empty response — no entry written")
         _log(cfg, f"session end {label}: wrote 0 entries")
         return 0
 
@@ -135,162 +177,9 @@ def _run_interview_session(
         session_num=session_num,
         dimension=dimension.key,
     )
-    _log(cfg, f"interview {label} captured \u2014 {filename}")
+    _log(cfg, f"interview {label} captured — {filename}")
     _log(cfg, f"session end {label}: wrote 1 entry")
     return 1
-
-
-def _run_undirected_session(
-    cfg: SelfTestConfig,
-    session_num: int,
-    model_info: ollama.ModelInfo,
-) -> int:
-    """Tool-calling undirected reflection. Text-only responses are captured too."""
-    state = SelfTestSessionState(
-        cfg=cfg,
-        stage="undirected",
-        session_num=session_num,
-        dimension=None,
-    )
-    tool_map = build_tools(state)
-    tool_defs = get_tool_definitions()
-
-    tape = tape_mod.assemble_tape(
-        cfg, stage="undirected", session_num=session_num,
-    )
-    label = f"undirected#{session_num}"
-    _log(cfg, f"session start {label} (tape: {len(tape):,} chars)")
-
-    messages: list[dict] = [
-        {"role": "system", "content": tape},
-        {"role": "user", "content": "self-reflect"},
-    ]
-
-    think_flag = True if model_info.has_thinking else None
-    text_captured = False
-
-    for round_idx in range(MAX_TOOL_ROUNDS):
-        response = ollama.chat(
-            messages,
-            tools=tool_defs if model_info.has_tools else None,
-            think=think_flag,
-        )
-
-        if not response.has_tool_calls:
-            # Model stopped without calling reflect_done. If it produced
-            # content *and* no tool write has happened yet this session,
-            # capture the text as an entry — small models often answer
-            # inline instead of wrapping responses in reflect_write.
-            if state.done:
-                break
-            body = (response.content or "").strip()
-            if body and state.writes_this_session == 0 and not text_captured:
-                filename = storage.write_entry(
-                    cfg,
-                    slug="text-response",
-                    content=body,
-                    stage="undirected",
-                    session_num=session_num,
-                    dimension=None,
-                )
-                state.writes_this_session += 1
-                text_captured = True
-                _log(cfg, f"text-capture {label} \u2014 {filename}")
-            else:
-                _log(
-                    cfg,
-                    f"deviation {label}: model returned without tool calls "
-                    f"after round {round_idx} \u2014 treating as complete",
-                )
-            break
-
-        messages.append(response.assistant_message())
-
-        for tc in response.tool_calls:
-            func_name = tc.get("function", {}).get("name", "unknown")
-            result = execute_tool(tool_map, tc)
-            _log(cfg, f"tool {label} {func_name} \u2014 {result[:80]}")
-            messages.append({"role": "tool", "content": result})
-            if state.done:
-                break
-
-        if state.done:
-            break
-
-    if not state.done:
-        _log(
-            cfg,
-            f"deviation {label}: reflect_done not called after "
-            f"{MAX_TOOL_ROUNDS} tool rounds \u2014 treating as complete",
-        )
-
-    _log(
-        cfg,
-        f"session end {label}: wrote {state.writes_this_session} entr"
-        f"{'y' if state.writes_this_session == 1 else 'ies'}",
-    )
-    return state.writes_this_session
-
-
-# --- stage runners ---
-
-
-def run_undirected_stage(
-    cfg: SelfTestConfig,
-    model_info: ollama.ModelInfo,
-    metadata: dict,
-    starting_session_num: int = 1,
-    starting_zero_streak: int = 0,
-) -> int:
-    """Run the undirected stage to exit condition. Returns next session_num."""
-    session_num = starting_session_num
-    zero_streak = starting_zero_streak
-
-    while session_num <= DEFAULT_UNDIRECTED_MAX_SESSIONS:
-        total = storage.count_entries(cfg, stage="undirected")
-
-        # Exit conditions (checked before starting a new session).
-        if total >= DEFAULT_UNDIRECTED_TARGET_ENTRIES:
-            _log(cfg, f"undirected: target reached ({total} entries) \u2014 advancing")
-            break
-        if zero_streak >= DEFAULT_UNDIRECTED_ZERO_STREAK:
-            _log(
-                cfg,
-                f"undirected: {zero_streak} zero-write sessions and "
-                f"{total} entries \u2014 advancing",
-            )
-            break
-
-        writes = run_session(
-            cfg, stage="undirected", session_num=session_num, model_info=model_info,
-        )
-
-        if writes == 0:
-            zero_streak += 1
-        else:
-            zero_streak = 0
-
-        metadata["undirected_sessions"] += 1
-        metadata["undirected_entries"] = storage.count_entries(cfg, stage="undirected")
-        metadata["total_entries"] = storage.count_entries(cfg)
-        st_config.write_metadata(cfg, metadata)
-
-        st_config.write_state(cfg, {
-            "stage": "undirected",
-            "next_session_num": session_num + 1,
-            "undirected_zero_streak": zero_streak,
-            "interview_next_index": 0,
-        })
-
-        session_num += 1
-    else:
-        _log(
-            cfg,
-            f"undirected: safety cap reached ({DEFAULT_UNDIRECTED_MAX_SESSIONS} "
-            "sessions) \u2014 advancing",
-        )
-
-    return session_num
 
 
 def run_interview_stage(
@@ -300,18 +189,12 @@ def run_interview_stage(
     starting_session_num: int,
     starting_index: int = 0,
 ) -> None:
-    """Run the 8-session interview stage in fixed dimension order."""
+    """Run the interview stage in fixed dimension order."""
     session_num = starting_session_num
 
     for idx in range(starting_index, len(DIMENSIONS)):
         dim = DIMENSIONS[idx]
-        run_session(
-            cfg,
-            stage="interview",
-            session_num=session_num,
-            model_info=model_info,
-            dimension=dim,
-        )
+        _run_interview_session(cfg, session_num, model_info, dim)
 
         metadata["interview_sessions"] += 1
         metadata["interview_entries"] = storage.count_entries(cfg, stage="interview")
@@ -321,7 +204,6 @@ def run_interview_stage(
         st_config.write_state(cfg, {
             "stage": "interview",
             "next_session_num": session_num + 1,
-            "undirected_zero_streak": 0,
             "interview_next_index": idx + 1,
         })
 
@@ -336,9 +218,8 @@ def _resolve_resume(cfg: SelfTestConfig) -> dict:
     state = st_config.read_state(cfg)
     if state is None:
         return {
-            "stage": "undirected",
+            "stage": "reflection",
             "next_session_num": 1,
-            "undirected_zero_streak": 0,
             "interview_next_index": 0,
         }
     return state
@@ -348,19 +229,6 @@ def _print_ollama_unreachable(url: str) -> None:
     print(f"[error] Ollama not reachable at {url}", file=sys.stderr)
     print(
         "  Start Ollama (`ollama serve` or the desktop app), then retry.",
-        file=sys.stderr,
-    )
-
-
-def _warn_no_tool_calling(model_name: str) -> None:
-    print(
-        f"[warn] Model '{model_name}' does not report tool-calling capability.",
-        file=sys.stderr,
-    )
-    print(
-        "  Undirected stage will ask for reflect_write / reflect_done anyway; "
-        "text-only responses will be captured as entries. Interview stage "
-        "does not use tools.",
         file=sys.stderr,
     )
 
@@ -377,13 +245,13 @@ def run_self_test(
 ) -> SelfTestConfig:
     """Run a full self-test.
 
-    When ``resume`` is True and ``run_id`` names an existing run directory,
-    the run picks up from the last completed session (as recorded in
-    ``state.json``). Otherwise a new run directory is created.
+    When ``resume`` is True and ``run_id`` names an existing run
+    directory, the run picks up from the last completed stage (as
+    recorded in ``state.json``). Otherwise a new run directory is
+    created.
     """
     commit = _git_commit_hash(project_root)
 
-    # If resuming with a specific run_id, init() will reuse that directory.
     cfg = st_config.init(
         model_name=model_name,
         ollama_url=ollama_url,
@@ -411,9 +279,6 @@ def run_self_test(
         print(f"[error] Cannot load model '{model_name}': {e}", file=sys.stderr)
         sys.exit(1)
 
-    if not model_info.has_tools:
-        _warn_no_tool_calling(model_name)
-
     # Metadata: load existing on resume, otherwise write fresh.
     if resume and cfg.metadata_path.exists():
         metadata = st_config.read_metadata(cfg)
@@ -423,33 +288,35 @@ def run_self_test(
         st_config.write_metadata(cfg, metadata)
 
     resume_state = _resolve_resume(cfg) if resume else {
-        "stage": "undirected",
+        "stage": "reflection",
         "next_session_num": 1,
-        "undirected_zero_streak": 0,
         "interview_next_index": 0,
     }
 
-    # Undirected stage (skip if we're already past it on a resume)
-    if resume_state["stage"] == "undirected":
-        next_session = run_undirected_stage(
-            cfg,
-            model_info,
-            metadata,
-            starting_session_num=resume_state["next_session_num"],
-            starting_zero_streak=resume_state["undirected_zero_streak"],
-        )
+    # Reflection stage (skip if already past it on a resume).
+    if resume_state["stage"] == "reflection":
+        _run_reflection_stage(cfg, model_info)
+        metadata["undirected_sessions"] = 1
+        metadata["undirected_entries"] = storage.count_entries(cfg, stage="undirected")
+        metadata["total_entries"] = storage.count_entries(cfg)
+        st_config.write_metadata(cfg, metadata)
+        st_config.write_state(cfg, {
+            "stage": "interview",
+            "next_session_num": 2,
+            "interview_next_index": 0,
+        })
+        interview_start = 2
+        interview_index = 0
     else:
-        next_session = resume_state["next_session_num"]
+        interview_start = resume_state["next_session_num"]
+        interview_index = resume_state["interview_next_index"]
 
-    # Interview stage — runs regardless of undirected entry count.
-    # A model that produced 0-1 entries will naturally score low on
-    # interview dimensions. That's data, not a reason to exclude it.
     run_interview_stage(
         cfg,
         model_info,
         metadata,
-        starting_session_num=next_session,
-        starting_index=resume_state["interview_next_index"],
+        starting_session_num=interview_start,
+        starting_index=interview_index,
     )
 
     metadata["status"] = "completed"
@@ -458,7 +325,6 @@ def run_self_test(
     st_config.write_state(cfg, {
         "stage": "done",
         "next_session_num": 0,
-        "undirected_zero_streak": 0,
         "interview_next_index": len(DIMENSIONS),
     })
 
